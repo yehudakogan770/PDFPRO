@@ -3,20 +3,20 @@ import type { PDFFont, PDFPage } from 'pdf-lib'
 import type { PageItem, SourceDoc } from '../types'
 import { buildMergedDoc } from './pdf'
 
-export type PaperSizeKey = 'a4' | 'letter' | 'legal'
 export type PrintLayoutMode = 'normal' | 'fit' | '2up' | '4up' | 'booklet'
 
-const PAPER_POINTS: Record<PaperSizeKey, [number, number]> = {
-  a4: PageSizes.A4,
-  letter: PageSizes.Letter,
-  legal: PageSizes.Legal,
-}
+/** A paper size in PDF points (1/72in), width x height, portrait orientation. */
+export type PaperPoints = [number, number]
 
-export const PAPER_SIZE_OPTIONS: { key: PaperSizeKey; label: string }[] = [
-  { key: 'a4', label: 'A4' },
-  { key: 'letter', label: 'Letter' },
-  { key: 'legal', label: 'Legal' },
+export const PAPER_PRESETS: { key: string; label: string; points: PaperPoints }[] = [
+  { key: 'a4', label: 'A4', points: PageSizes.A4 },
+  { key: 'letter', label: 'Letter', points: PageSizes.Letter },
+  { key: 'legal', label: 'Legal', points: PageSizes.Legal },
 ]
+
+export const MM_PER_POINT = 25.4 / 72
+export const POINTS_PER_MM = 72 / 25.4
+export const POINTS_PER_INCH = 72
 
 export interface StampOptions {
   pageNumbers: boolean
@@ -305,10 +305,10 @@ export async function buildPrintLayoutPdf(
   mode: PrintLayoutMode,
   pages: PageItem[],
   sources: Map<string, SourceDoc>,
-  paperSize: PaperSizeKey,
+  paperSize: PaperPoints,
   stamps: StampOptions,
 ): Promise<Uint8Array> {
-  const [portraitWidth, portraitHeight] = PAPER_POINTS[paperSize]
+  const [portraitWidth, portraitHeight] = paperSize
 
   let doc: PDFDocument
   if (mode === 'normal') {
