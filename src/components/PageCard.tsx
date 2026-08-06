@@ -1,16 +1,17 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { PageItem } from '../types'
-import { IconGrip, IconRotate, IconTrash } from './Icons'
+import { IconCopy, IconGrip, IconRotate, IconTrash } from './Icons'
 
 interface PageCardProps {
   page: PageItem
   position: number
   onRotate: (id: string) => void
   onRemove: (id: string) => void
+  onDuplicate: (id: string) => void
 }
 
-export function PageCard({ page, position, onRotate, onRemove }: PageCardProps) {
+export function PageCard({ page, position, onRotate, onRemove, onDuplicate }: PageCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: page.id })
 
   const style = {
@@ -65,6 +66,14 @@ export function PageCard({ page, position, onRotate, onRemove }: PageCardProps) 
         >
           <IconRotate className="size-3.5" />
           Rotate
+        </button>
+        <button
+          type="button"
+          onClick={() => onDuplicate(page.id)}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        >
+          <IconCopy className="size-3.5" />
+          Duplicate
         </button>
         <button
           type="button"

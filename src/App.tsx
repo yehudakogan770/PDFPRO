@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import type { PageItem, SourceDoc } from './types'
-import { PdfLoadError, downloadBytes, ensurePdfExtension, loadPdfFile, mergePages, uid } from './lib/pdf'
+import {
+  PdfLoadError,
+  createBlankPage,
+  downloadBytes,
+  ensurePdfExtension,
+  isImageFile,
+  loadImageFile,
+  loadPdfFile,
+  mergePages,
+  uid,
+} from './lib/pdf'
 import { Dropzone } from './components/Dropzone'
 import { PageGrid } from './components/PageGrid'
 import { ImportIssues } from './components/ImportIssues'
 import type { ImportIssue } from './components/ImportIssues'
 import { PrintLayoutModal } from './components/PrintLayoutModal'
-import { IconDownload, IconFileText, IconPrinter, IconSpinner, IconUploadCloud } from './components/Icons'
+import { SplitModal } from './components/SplitModal'
+import { IconDownload, IconFilePlus, IconFileText, IconPrinter, IconScissors, IconSpinner, IconUploadCloud } from './components/Icons'
 
 function App() {
   const [pages, setPages] = useState<PageItem[]>([])
@@ -17,6 +28,7 @@ function App() {
   const [isMerging, setIsMerging] = useState(false)
   const [outputName, setOutputName] = useState('merged.pdf')
   const [printModalOpen, setPrintModalOpen] = useState(false)
+  const [splitModalOpen, setSplitModalOpen] = useState(false)
   const [windowDragActive, setWindowDragActive] = useState(false)
   const dragCounter = useRef(0)
 
@@ -39,18 +51,23 @@ function App() {
 
   const handleFiles = useCallback(
     async (incoming: File[]) => {
-      const pdfFiles = incoming.filter((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
-      const rejectedCount = incoming.length - pdfFiles.length
+      const isPdf = (f: File) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+      const importable = incoming.filter((f) => isPdf(f) || isImageFile(f))
+      const rejectedCount = incoming.length - importable.length
       if (rejectedCount > 0) {
-        pushIssue(rejectedCount === 1 ? '1 file was skipped because it is not a PDF.' : `${rejectedCount} files were skipped because they are not PDFs.`)
+        pushIssue(
+          rejectedCount === 1
+            ? '1 file was skipped — only PDF, JPG, and PNG files are supported.'
+            : `${rejectedCount} files were skipped — only PDF, JPG, and PNG files are supported.`,
+        )
       }
-      if (pdfFiles.length === 0) return
+      if (importable.length === 0) return
 
-      setImportProgress({ done: 0, total: pdfFiles.length })
+      setImportProgress({ done: 0, total: importable.length })
 
-      for (const file of pdfFiles) {
+      for (const file of importable) {
         try {
-          const { source, pages: newPages } = await loadPdfFile(file)
+          const { source, pages: newPages } = isPdf(file) ? await loadPdfFile(file) : await loadImageFile(file)
           setSources((prev) => {
             const next = new Map(prev)
             next.set(source.id, source)
@@ -70,6 +87,32 @@ function App() {
     },
     [pushIssue],
   )
+
+  const handleDuplicate = useCallback((id: string) => {
+    setPages((prev) => {
+      const index = prev.findIndex((p) => p.id === id)
+      if (index === -1) return prev
+      const copy: PageItem = { ...prev[index], id: uid() }
+      return [...prev.slice(0, index + 1), copy, ...prev.slice(index + 1)]
+    })
+  }, [])
+
+  const handleAddBlankPage = useCallback(async () => {
+    const last = pages[pages.length - 1]
+    const width = last ? (last.rotation % 180 !== 0 ? last.height : last.width) : undefined
+    const height = last ? (last.rotation % 180 !== 0 ? last.width : last.height) : undefined
+    try {
+      const { source, pages: newPages } = await createBlankPage(width, height)
+      setSources((prev) => {
+        const next = new Map(prev)
+        next.set(source.id, source)
+        return next
+      })
+      setPages((prev) => [...prev, ...newPages])
+    } catch {
+      pushIssue('Something went wrong while adding a blank page.')
+    }
+  }, [pages, pushIssue])
 
   const handleRotate = useCallback((id: string) => {
     setPages((prev) => prev.map((p) => (p.id === id ? { ...p, rotation: (p.rotation + 90) % 360 } : p)))
@@ -174,6 +217,22 @@ function App() {
                 </label>
                 <button
                   type="button"
+                  onClick={() => void handleAddBlankPage()}
+                  className="inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                >
+                  <IconFilePlus className="size-4" />
+                  Blank page
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSplitModalOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                >
+                  <IconScissors className="size-4" />
+                  Split
+                </button>
+                <button
+                  type="button"
                   onClick={handleClearAll}
                   className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
                 >
@@ -217,7 +276,7 @@ function App() {
                 {summary} — drag any page to reorder
               </p>
             </div>
-            <PageGrid pages={pages} onReorder={handleReorder} onRotate={handleRotate} onRemove={handleRemove} />
+            <PageGrid pages={pages} onReorder={handleReorder} onRotate={handleRotate} onRemove={handleRemove} onDuplicate={handleDuplicate} />
           </>
         )}
 
@@ -247,11 +306,15 @@ function App() {
         <PrintLayoutModal pages={pages} sources={sources} onClose={() => setPrintModalOpen(false)} onError={pushIssue} />
       )}
 
+      {splitModalOpen && (
+        <SplitModal pages={pages} sources={sources} onClose={() => setSplitModalOpen(false)} onError={pushIssue} />
+      )}
+
       {windowDragActive && (
         <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-indigo-600/10 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-indigo-400 bg-white/95 px-12 py-10 shadow-xl">
             <IconUploadCloud className="size-10 text-indigo-600" />
-            <p className="text-lg font-semibold text-indigo-900">Drop PDFs to import</p>
+            <p className="text-lg font-semibold text-indigo-900">Drop files to import</p>
           </div>
         </div>
       )}

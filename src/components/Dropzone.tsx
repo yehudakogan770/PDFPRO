@@ -8,7 +8,7 @@ interface DropzoneProps {
   disabled?: boolean
 }
 
-function extractPdfFiles(fileList: FileList | null): File[] {
+function extractFiles(fileList: FileList | null): File[] {
   if (!fileList) return []
   return Array.from(fileList)
 }
@@ -26,7 +26,7 @@ export function Dropzone({ onFiles, variant = 'empty', disabled = false }: Dropz
     e.preventDefault()
     setIsDragOver(false)
     if (disabled) return
-    onFiles(extractPdfFiles(e.dataTransfer.files))
+    onFiles(extractFiles(e.dataTransfer.files))
   }
 
   const handleDragOver = (e: DragEvent<HTMLDivElement | HTMLButtonElement>) => {
@@ -44,12 +44,12 @@ export function Dropzone({ onFiles, variant = 'empty', disabled = false }: Dropz
       ref={inputRef}
       id={inputId}
       type="file"
-      accept="application/pdf,.pdf"
+      accept="application/pdf,.pdf,image/jpeg,image/png,.jpg,.jpeg,.png"
       multiple
       disabled={disabled}
       className="sr-only"
       onChange={(e) => {
-        onFiles(extractPdfFiles(e.target.files))
+        onFiles(extractFiles(e.target.files))
         e.target.value = ''
       }}
     />
@@ -72,7 +72,7 @@ export function Dropzone({ onFiles, variant = 'empty', disabled = false }: Dropz
           }`}
         >
           <IconPlus className="size-4" />
-          Add PDFs
+          Add Files
         </button>
         {input}
       </>
@@ -101,7 +101,7 @@ export function Dropzone({ onFiles, variant = 'empty', disabled = false }: Dropz
       <div className={`flex size-16 items-center justify-center rounded-full ${isDragOver ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'}`}>
         <IconUploadCloud className="size-8" />
       </div>
-      <p className="mt-5 text-base font-medium text-slate-800">Drop PDFs here, or click to browse</p>
+      <p className="mt-5 text-base font-medium text-slate-800">Drop PDFs or images here, or click to browse</p>
       <p className="mt-1.5 text-sm text-slate-500">Import as many files as you like — you'll be able to drag pages into any order before merging.</p>
       {input}
     </div>
