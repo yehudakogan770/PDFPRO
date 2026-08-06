@@ -1,17 +1,19 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { PageItem } from '../types'
-import { IconCopy, IconGrip, IconRotate, IconTrash } from './Icons'
+import { IconCheck, IconCopy, IconGrip, IconRotate, IconTrash } from './Icons'
 
 interface PageCardProps {
   page: PageItem
   position: number
+  selected: boolean
   onRotate: (id: string) => void
   onRemove: (id: string) => void
   onDuplicate: (id: string) => void
+  onToggleSelect: (id: string) => void
 }
 
-export function PageCard({ page, position, onRotate, onRemove, onDuplicate }: PageCardProps) {
+export function PageCard({ page, position, selected, onRotate, onRemove, onDuplicate, onToggleSelect }: PageCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: page.id })
 
   const style = {
@@ -26,13 +28,21 @@ export function PageCard({ page, position, onRotate, onRemove, onDuplicate }: Pa
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative touch-none rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-slate-200 transition-shadow hover:shadow-md ${
-        isDragging ? 'z-10 opacity-50 shadow-lg ring-indigo-300' : ''
-      }`}
+      className={`group relative touch-none rounded-xl bg-white p-2.5 shadow-sm ring-1 transition-shadow hover:shadow-md ${
+        selected ? 'ring-2 ring-indigo-500' : 'ring-slate-200'
+      } ${isDragging ? 'z-10 opacity-50 shadow-lg ring-indigo-300' : ''}`}
     >
-      <div className="absolute left-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full bg-slate-900/80 text-xs font-semibold text-white shadow-sm">
-        {position}
-      </div>
+      <button
+        type="button"
+        onClick={() => onToggleSelect(page.id)}
+        aria-label={selected ? `Deselect page ${position}` : `Select page ${position}`}
+        aria-pressed={selected}
+        className={`absolute left-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full text-xs font-semibold shadow-sm transition-colors ${
+          selected ? 'bg-indigo-600 text-white' : 'bg-slate-900/80 text-white hover:bg-indigo-600'
+        }`}
+      >
+        {selected ? <IconCheck className="size-3.5" /> : position}
+      </button>
 
       <button
         type="button"

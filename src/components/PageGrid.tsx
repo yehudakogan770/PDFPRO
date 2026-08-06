@@ -15,13 +15,15 @@ import { PageCard } from './PageCard'
 
 interface PageGridProps {
   pages: PageItem[]
+  selectedIds: Set<string>
   onReorder: (pages: PageItem[]) => void
   onRotate: (id: string) => void
   onRemove: (id: string) => void
   onDuplicate: (id: string) => void
+  onToggleSelect: (id: string) => void
 }
 
-export function PageGrid({ pages, onReorder, onRotate, onRemove, onDuplicate }: PageGridProps) {
+export function PageGrid({ pages, selectedIds, onReorder, onRotate, onRemove, onDuplicate, onToggleSelect }: PageGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const sensors = useSensors(
@@ -58,7 +60,16 @@ export function PageGrid({ pages, onReorder, onRotate, onRemove, onDuplicate }: 
       <SortableContext items={pages.map((p) => p.id)} strategy={rectSortingStrategy}>
         <div className={`grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 ${activeId ? 'dragging-active' : ''}`}>
           {pages.map((page, index) => (
-            <PageCard key={page.id} page={page} position={index + 1} onRotate={onRotate} onRemove={onRemove} onDuplicate={onDuplicate} />
+            <PageCard
+              key={page.id}
+              page={page}
+              position={index + 1}
+              selected={selectedIds.has(page.id)}
+              onRotate={onRotate}
+              onRemove={onRemove}
+              onDuplicate={onDuplicate}
+              onToggleSelect={onToggleSelect}
+            />
           ))}
         </div>
       </SortableContext>

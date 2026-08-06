@@ -14,15 +14,28 @@ import {
 } from './lib/pdf'
 import { Dropzone } from './components/Dropzone'
 import { PageGrid } from './components/PageGrid'
+import { EmptyState } from './components/EmptyState'
 import { ImportIssues } from './components/ImportIssues'
 import type { ImportIssue } from './components/ImportIssues'
 import { PrintLayoutModal } from './components/PrintLayoutModal'
 import { SplitModal } from './components/SplitModal'
-import { IconDownload, IconFilePlus, IconFileText, IconPrinter, IconScissors, IconSpinner, IconUploadCloud } from './components/Icons'
+import {
+  IconCopy,
+  IconDownload,
+  IconFilePlus,
+  IconFileText,
+  IconPrinter,
+  IconRotate,
+  IconScissors,
+  IconSpinner,
+  IconTrash,
+  IconUploadCloud,
+} from './components/Icons'
 
 function App() {
   const [pages, setPages] = useState<PageItem[]>([])
   const [sources, setSources] = useState<Map<string, SourceDoc>>(new Map())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [issues, setIssues] = useState<ImportIssue[]>([])
   const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null)
   const [isMerging, setIsMerging] = useState(false)
@@ -120,6 +133,12 @@ function App() {
 
   const handleRemove = useCallback((id: string) => {
     setPages((prev) => prev.filter((p) => p.id !== id))
+    setSelectedIds((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
   }, [])
 
   const handleReorder = useCallback((next: PageItem[]) => {
@@ -130,7 +149,44 @@ function App() {
     setPages([])
     setSources(new Map())
     setIssues([])
+    setSelectedIds(new Set())
   }, [])
+
+  const handleToggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedIds(new Set(pages.map((p) => p.id)))
+  }, [pages])
+
+  const handleDeselectAll = useCallback(() => setSelectedIds(new Set()), [])
+
+  const handleBulkRemove = useCallback(() => {
+    setPages((prev) => prev.filter((p) => !selectedIds.has(p.id)))
+    setSelectedIds(new Set())
+  }, [selectedIds])
+
+  const handleBulkRotate = useCallback(() => {
+    setPages((prev) => prev.map((p) => (selectedIds.has(p.id) ? { ...p, rotation: (p.rotation + 90) % 360 } : p)))
+  }, [selectedIds])
+
+  const handleBulkDuplicate = useCallback(() => {
+    setPages((prev) => {
+      const next: PageItem[] = []
+      for (const p of prev) {
+        next.push(p)
+        if (selectedIds.has(p.id)) next.push({ ...p, id: uid() })
+      }
+      return next
+    })
+    setSelectedIds(new Set())
+  }, [selectedIds])
 
   const handleMerge = useCallback(async () => {
     if (pages.length === 0 || isMerging) return
@@ -182,6 +238,10 @@ function App() {
     }
   }
 
+  const toolbarButtonClass =
+    'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-white hover:text-slate-900'
+  const divider = <div className="mx-0.5 h-5 w-px shrink-0 bg-slate-300" aria-hidden="true" />
+
   return (
     <div
       className="relative min-h-screen bg-slate-50 text-slate-900"
@@ -191,55 +251,18 @@ function App() {
       onDrop={onWindowDrop}
     >
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2">
             <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
               <IconFileText className="size-4.5" />
             </div>
             <div className="leading-tight">
               <div className="text-sm font-bold tracking-tight text-slate-900">PDFPRO</div>
-              <div className="text-[11px] text-slate-500">Merge, reorder &amp; print PDFs</div>
+              <div className="text-[11px] text-slate-500">Local PDF &amp; print toolkit</div>
             </div>
           </div>
 
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            {pages.length > 0 && (
-              <>
-                <label className="hidden items-center gap-1.5 text-sm text-slate-500 sm:flex">
-                  Save as
-                  <input
-                    type="text"
-                    value={outputName}
-                    onChange={(e) => setOutputName(e.target.value)}
-                    className="w-36 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                    placeholder="merged.pdf"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => void handleAddBlankPage()}
-                  className="inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-                >
-                  <IconFilePlus className="size-4" />
-                  Blank page
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSplitModalOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-                >
-                  <IconScissors className="size-4" />
-                  Split
-                </button>
-                <button
-                  type="button"
-                  onClick={handleClearAll}
-                  className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-                >
-                  Clear all
-                </button>
-              </>
-            )}
+          <div className="ml-auto flex items-center gap-2">
             <Dropzone variant="button" onFiles={handleFiles} disabled={isImporting} />
             {pages.length > 0 && (
               <button
@@ -251,33 +274,106 @@ function App() {
                 Print Layout
               </button>
             )}
-            <button
-              type="button"
-              onClick={handleMerge}
-              disabled={pages.length === 0 || isMerging}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              {isMerging ? <IconSpinner className="size-4" /> : <IconDownload className="size-4" />}
-              {isMerging ? 'Merging…' : 'Merge & Download'}
-            </button>
+            {pages.length > 0 && (
+              <button
+                type="button"
+                onClick={handleMerge}
+                disabled={isMerging}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {isMerging ? <IconSpinner className="size-4" /> : <IconDownload className="size-4" />}
+                {isMerging ? 'Merging…' : 'Merge & Download'}
+              </button>
+            )}
           </div>
         </div>
+
+        {pages.length > 0 && (
+          <div className="border-t border-slate-100 bg-slate-50/70">
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 py-2 sm:px-6">
+              {selectedIds.size > 0 ? (
+                <>
+                  <p className="text-sm font-medium text-slate-700">{selectedIds.size} selected</p>
+                  <div className="ml-auto flex flex-wrap items-center gap-0.5">
+                    <button type="button" onClick={handleBulkDuplicate} className={toolbarButtonClass}>
+                      <IconCopy className="size-3.5" />
+                      Duplicate
+                    </button>
+                    <button type="button" onClick={handleBulkRotate} className={toolbarButtonClass}>
+                      <IconRotate className="size-3.5" />
+                      Rotate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBulkRemove}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                    >
+                      <IconTrash className="size-3.5" />
+                      Remove
+                    </button>
+                    {divider}
+                    <button type="button" onClick={handleDeselectAll} className={toolbarButtonClass}>
+                      Deselect all
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-500">{summary} — drag any page to reorder</p>
+                  <div className="ml-auto flex flex-wrap items-center gap-1">
+                    <button type="button" onClick={handleSelectAll} className={toolbarButtonClass}>
+                      Select all
+                    </button>
+                    {divider}
+                    <label className="hidden items-center gap-1.5 pl-1 text-sm text-slate-500 sm:flex">
+                      Save as
+                      <input
+                        type="text"
+                        value={outputName}
+                        onChange={(e) => setOutputName(e.target.value)}
+                        className="w-36 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        placeholder="merged.pdf"
+                      />
+                    </label>
+                    <button type="button" onClick={() => void handleAddBlankPage()} className={toolbarButtonClass}>
+                      <IconFilePlus className="size-3.5" />
+                      Blank page
+                    </button>
+                    <button type="button" onClick={() => setSplitModalOpen(true)} className={toolbarButtonClass}>
+                      <IconScissors className="size-3.5" />
+                      Split
+                    </button>
+                    {divider}
+                    <button
+                      type="button"
+                      onClick={handleClearAll}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <ImportIssues issues={issues} onDismiss={dismissIssue} onDismissAll={dismissAllIssues} />
 
         {pages.length === 0 ? (
-          <Dropzone variant="empty" onFiles={handleFiles} disabled={isImporting} />
+          <EmptyState onFiles={handleFiles} disabled={isImporting} />
         ) : (
-          <>
-            <div className="mb-4 flex items-center justify-between">
-              <p className="text-sm text-slate-500">
-                {summary} — drag any page to reorder
-              </p>
-            </div>
-            <PageGrid pages={pages} onReorder={handleReorder} onRotate={handleRotate} onRemove={handleRemove} onDuplicate={handleDuplicate} />
-          </>
+          <PageGrid
+            pages={pages}
+            selectedIds={selectedIds}
+            onReorder={handleReorder}
+            onRotate={handleRotate}
+            onRemove={handleRemove}
+            onDuplicate={handleDuplicate}
+            onToggleSelect={handleToggleSelect}
+          />
         )}
 
         {isImporting && importProgress && (
