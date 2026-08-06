@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - claude/multi-pdf-import-merge-gpqtby
   workflow_dispatch:
 
 permissions:
