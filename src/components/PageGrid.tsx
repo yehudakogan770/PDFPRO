@@ -21,9 +21,10 @@ interface PageGridProps {
   onRemove: (id: string) => void
   onDuplicate: (id: string) => void
   onToggleSelect: (id: string) => void
+  onPreview: (page: PageItem) => void
 }
 
-export function PageGrid({ pages, selectedIds, onReorder, onRotate, onRemove, onDuplicate, onToggleSelect }: PageGridProps) {
+export function PageGrid({ pages, selectedIds, onReorder, onRotate, onRemove, onDuplicate, onToggleSelect, onPreview }: PageGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const sensors = useSensors(
@@ -69,6 +70,7 @@ export function PageGrid({ pages, selectedIds, onReorder, onRotate, onRemove, on
               onRemove={onRemove}
               onDuplicate={onDuplicate}
               onToggleSelect={onToggleSelect}
+              onPreview={onPreview}
             />
           ))}
         </div>

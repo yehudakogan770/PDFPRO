@@ -11,9 +11,10 @@ interface PageCardProps {
   onRemove: (id: string) => void
   onDuplicate: (id: string) => void
   onToggleSelect: (id: string) => void
+  onPreview: (page: PageItem) => void
 }
 
-export function PageCard({ page, position, selected, onRotate, onRemove, onDuplicate, onToggleSelect }: PageCardProps) {
+export function PageCard({ page, position, selected, onRotate, onRemove, onDuplicate, onToggleSelect, onPreview }: PageCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: page.id })
 
   const style = {
@@ -54,7 +55,13 @@ export function PageCard({ page, position, selected, onRotate, onRemove, onDupli
         <IconGrip className="size-4" />
       </button>
 
-      <div className="flex items-center justify-center overflow-hidden rounded-lg bg-slate-100" style={{ aspectRatio }}>
+      <button
+        type="button"
+        onClick={() => onPreview(page)}
+        aria-label={`Preview page ${position}`}
+        className="flex w-full cursor-zoom-in items-center justify-center overflow-hidden rounded-lg bg-slate-100"
+        style={{ aspectRatio }}
+      >
         <img
           src={page.thumbnailUrl}
           alt={`Page ${page.pageNumber} of ${page.sourceName}`}
@@ -62,7 +69,7 @@ export function PageCard({ page, position, selected, onRotate, onRemove, onDupli
           className="h-full w-full select-none object-contain transition-transform duration-200"
           style={{ transform: `rotate(${page.rotation}deg)` }}
         />
-      </div>
+      </button>
 
       <div className="mt-2 truncate text-center text-xs text-slate-500" title={`${page.sourceName} · page ${page.pageNumber}`}>
         {page.sourceName} <span className="text-slate-400">· p{page.pageNumber}</span>

@@ -19,6 +19,8 @@ import { ImportIssues } from './components/ImportIssues'
 import type { ImportIssue } from './components/ImportIssues'
 import { PrintLayoutModal } from './components/PrintLayoutModal'
 import { SplitModal } from './components/SplitModal'
+import { PreviewPanel } from './components/PreviewPanel'
+import { UndoToast } from './components/UndoToast'
 import {
   IconCopy,
   IconDownload,
@@ -32,6 +34,14 @@ import {
   IconUploadCloud,
 } from './components/Icons'
 
+const UNDO_TIMEOUT_MS = 8000
+
+interface UndoSnapshot {
+  pages: PageItem[]
+  sources: Map<string, SourceDoc>
+  message: string
+}
+
 function App() {
   const [pages, setPages] = useState<PageItem[]>([])
   const [sources, setSources] = useState<Map<string, SourceDoc>>(new Map())
@@ -42,8 +52,18 @@ function App() {
   const [outputName, setOutputName] = useState('merged.pdf')
   const [printModalOpen, setPrintModalOpen] = useState(false)
   const [splitModalOpen, setSplitModalOpen] = useState(false)
+  const [previewPageId, setPreviewPageId] = useState<string | null>(null)
+  const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot | null>(null)
   const [windowDragActive, setWindowDragActive] = useState(false)
   const dragCounter = useRef(0)
+  const undoTimerRef = useRef<number | null>(null)
+  const pagesRef = useRef(pages)
+  const sourcesRef = useRef(sources)
+
+  useEffect(() => {
+    pagesRef.current = pages
+    sourcesRef.current = sources
+  })
 
   const fileCount = sources.size
   const isImporting = importProgress !== null
@@ -60,6 +80,22 @@ function App() {
 
   const pushIssue = useCallback((message: string) => {
     setIssues((prev) => [...prev, { id: uid(), message }])
+  }, [])
+
+  const pushUndoSnapshot = useCallback((message: string) => {
+    setUndoSnapshot({ pages: pagesRef.current, sources: sourcesRef.current, message })
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current)
+    undoTimerRef.current = window.setTimeout(() => setUndoSnapshot(null), UNDO_TIMEOUT_MS)
+  }, [])
+
+  const handleUndo = useCallback(() => {
+    setUndoSnapshot((snapshot) => {
+      if (!snapshot) return snapshot
+      setPages(snapshot.pages)
+      setSources(snapshot.sources)
+      if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current)
+      return null
+    })
   }, [])
 
   const handleFiles = useCallback(
@@ -131,26 +167,36 @@ function App() {
     setPages((prev) => prev.map((p) => (p.id === id ? { ...p, rotation: (p.rotation + 90) % 360 } : p)))
   }, [])
 
-  const handleRemove = useCallback((id: string) => {
-    setPages((prev) => prev.filter((p) => p.id !== id))
-    setSelectedIds((prev) => {
-      if (!prev.has(id)) return prev
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
-  }, [])
+  const handleRemove = useCallback(
+    (id: string) => {
+      pushUndoSnapshot('Page removed')
+      setPages((prev) => prev.filter((p) => p.id !== id))
+      setSelectedIds((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    },
+    [pushUndoSnapshot],
+  )
 
   const handleReorder = useCallback((next: PageItem[]) => {
     setPages(next)
   }, [])
 
+  const handleReverseOrder = useCallback(() => {
+    setPages((prev) => [...prev].reverse())
+  }, [])
+
   const handleClearAll = useCallback(() => {
+    if (pagesRef.current.length === 0) return
+    pushUndoSnapshot('Cleared all pages')
     setPages([])
     setSources(new Map())
     setIssues([])
     setSelectedIds(new Set())
-  }, [])
+  }, [pushUndoSnapshot])
 
   const handleToggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -168,9 +214,11 @@ function App() {
   const handleDeselectAll = useCallback(() => setSelectedIds(new Set()), [])
 
   const handleBulkRemove = useCallback(() => {
+    if (selectedIds.size === 0) return
+    pushUndoSnapshot(selectedIds.size === 1 ? '1 page removed' : `${selectedIds.size} pages removed`)
     setPages((prev) => prev.filter((p) => !selectedIds.has(p.id)))
     setSelectedIds(new Set())
-  }, [selectedIds])
+  }, [selectedIds, pushUndoSnapshot])
 
   const handleBulkRotate = useCallback(() => {
     setPages((prev) => prev.map((p) => (selectedIds.has(p.id) ? { ...p, rotation: (p.rotation + 90) % 360 } : p)))
@@ -214,6 +262,42 @@ function App() {
     return `${pages.length} ${pageWord} from ${fileCount} ${fileWord}`
   }, [pages.length, fileCount])
 
+  const previewPage = useMemo(() => {
+    if (pages.length === 0) return null
+    return pages.find((p) => p.id === previewPageId) ?? pages[0]
+  }, [pages, previewPageId])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const isTyping = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
+      const mod = e.metaKey || e.ctrlKey
+
+      if (mod && e.key.toLowerCase() === 'z') {
+        if (isTyping) return
+        e.preventDefault()
+        handleUndo()
+        return
+      }
+      if (isTyping) return
+      if (mod && e.key.toLowerCase() === 'a') {
+        e.preventDefault()
+        handleSelectAll()
+        return
+      }
+      if (e.key === 'Escape' && selectedIds.size > 0) {
+        handleDeselectAll()
+        return
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0) {
+        e.preventDefault()
+        handleBulkRemove()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleUndo, handleSelectAll, handleDeselectAll, handleBulkRemove, selectedIds.size])
+
   const onWindowDragEnter = (e: DragEvent<HTMLDivElement>) => {
     if (!e.dataTransfer.types.includes('Files')) return
     e.preventDefault()
@@ -251,7 +335,7 @@ function App() {
       onDrop={onWindowDrop}
     >
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2">
             <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
               <IconFileText className="size-4.5" />
@@ -290,7 +374,7 @@ function App() {
 
         {pages.length > 0 && (
           <div className="border-t border-slate-100 bg-slate-50/70">
-            <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 py-2 sm:px-6">
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-4 py-2 sm:px-6">
               {selectedIds.size > 0 ? (
                 <>
                   <p className="text-sm font-medium text-slate-700">{selectedIds.size} selected</p>
@@ -339,6 +423,9 @@ function App() {
                       <IconFilePlus className="size-3.5" />
                       Blank page
                     </button>
+                    <button type="button" onClick={handleReverseOrder} className={toolbarButtonClass}>
+                      Reverse order
+                    </button>
                     <button type="button" onClick={() => setSplitModalOpen(true)} className={toolbarButtonClass}>
                       <IconScissors className="size-3.5" />
                       Split
@@ -359,21 +446,25 @@ function App() {
         )}
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+      <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
         <ImportIssues issues={issues} onDismiss={dismissIssue} onDismissAll={dismissAllIssues} />
 
         {pages.length === 0 ? (
           <EmptyState onFiles={handleFiles} disabled={isImporting} />
         ) : (
-          <PageGrid
-            pages={pages}
-            selectedIds={selectedIds}
-            onReorder={handleReorder}
-            onRotate={handleRotate}
-            onRemove={handleRemove}
-            onDuplicate={handleDuplicate}
-            onToggleSelect={handleToggleSelect}
-          />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_280px]">
+            <PageGrid
+              pages={pages}
+              selectedIds={selectedIds}
+              onReorder={handleReorder}
+              onRotate={handleRotate}
+              onRemove={handleRemove}
+              onDuplicate={handleDuplicate}
+              onToggleSelect={handleToggleSelect}
+              onPreview={(page) => setPreviewPageId(page.id)}
+            />
+            <PreviewPanel page={previewPage} onRotate={handleRotate} onRemove={handleRemove} />
+          </div>
         )}
 
         {isImporting && importProgress && (
@@ -404,6 +495,10 @@ function App() {
 
       {splitModalOpen && (
         <SplitModal pages={pages} sources={sources} onClose={() => setSplitModalOpen(false)} onError={pushIssue} />
+      )}
+
+      {undoSnapshot && (
+        <UndoToast message={undoSnapshot.message} onUndo={handleUndo} onDismiss={() => setUndoSnapshot(null)} />
       )}
 
       {windowDragActive && (
