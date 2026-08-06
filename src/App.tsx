@@ -6,7 +6,8 @@ import { Dropzone } from './components/Dropzone'
 import { PageGrid } from './components/PageGrid'
 import { ImportIssues } from './components/ImportIssues'
 import type { ImportIssue } from './components/ImportIssues'
-import { IconDownload, IconFileText, IconSpinner, IconUploadCloud } from './components/Icons'
+import { PrintLayoutModal } from './components/PrintLayoutModal'
+import { IconDownload, IconFileText, IconPrinter, IconSpinner, IconUploadCloud } from './components/Icons'
 
 function App() {
   const [pages, setPages] = useState<PageItem[]>([])
@@ -15,6 +16,7 @@ function App() {
   const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null)
   const [isMerging, setIsMerging] = useState(false)
   const [outputName, setOutputName] = useState('merged.pdf')
+  const [printModalOpen, setPrintModalOpen] = useState(false)
   const [windowDragActive, setWindowDragActive] = useState(false)
   const dragCounter = useRef(0)
 
@@ -153,7 +155,7 @@ function App() {
             </div>
             <div className="leading-tight">
               <div className="text-sm font-bold tracking-tight text-slate-900">PDFPRO</div>
-              <div className="text-[11px] text-slate-500">Merge &amp; reorder PDFs</div>
+              <div className="text-[11px] text-slate-500">Merge, reorder &amp; print PDFs</div>
             </div>
           </div>
 
@@ -180,6 +182,16 @@ function App() {
               </>
             )}
             <Dropzone variant="button" onFiles={handleFiles} disabled={isImporting} />
+            {pages.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setPrintModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <IconPrinter className="size-4" />
+                Print Layout
+              </button>
+            )}
             <button
               type="button"
               onClick={handleMerge}
@@ -230,6 +242,10 @@ function App() {
       <footer className="pb-10 pt-4 text-center text-xs text-slate-400">
         Everything runs locally in your browser — your files are never uploaded anywhere.
       </footer>
+
+      {printModalOpen && (
+        <PrintLayoutModal pages={pages} sources={sources} onClose={() => setPrintModalOpen(false)} onError={pushIssue} />
+      )}
 
       {windowDragActive && (
         <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-indigo-600/10 backdrop-blur-sm">

@@ -92,12 +92,10 @@ export async function loadPdfFile(file: File): Promise<LoadedPdf> {
   }
 }
 
-/** Builds one merged PDF from the given pages, in the order given, applying
- * each page's accumulated rotation. */
-export async function mergePages(
-  pages: PageItem[],
-  sources: Map<string, SourceDoc>,
-): Promise<Uint8Array> {
+/** Builds one merged PDF document from the given pages, in the order given,
+ * applying each page's accumulated rotation. Copies full page objects (not
+ * flattened content), so links, form fields, and annotations survive. */
+export async function buildMergedDoc(pages: PageItem[], sources: Map<string, SourceDoc>): Promise<PDFDocument> {
   const mergedPdf = await PDFDocument.create()
   const docCache = new Map<string, PDFDocument>()
 
@@ -118,6 +116,11 @@ export async function mergePages(
     mergedPdf.addPage(copiedPage)
   }
 
+  return mergedPdf
+}
+
+export async function mergePages(pages: PageItem[], sources: Map<string, SourceDoc>): Promise<Uint8Array> {
+  const mergedPdf = await buildMergedDoc(pages, sources)
   return mergedPdf.save()
 }
 
