@@ -24,6 +24,11 @@ export interface StampOptions {
   cornerMarks: boolean
 }
 
+export interface DocMetadata {
+  title: string
+  author: string
+}
+
 /** Margin around the outer edge of each sheet, and gutter between cells, in points. */
 const SHEET_MARGIN = 24
 const CELL_GUTTER = 16
@@ -307,6 +312,7 @@ export async function buildPrintLayoutPdf(
   sources: Map<string, SourceDoc>,
   paperSize: PaperPoints,
   stamps: StampOptions,
+  metadata?: DocMetadata,
 ): Promise<Uint8Array> {
   const [portraitWidth, portraitHeight] = paperSize
 
@@ -324,5 +330,13 @@ export async function buildPrintLayoutPdf(
   }
 
   await applyStamps(doc, stamps)
+
+  const title = metadata?.title.trim()
+  const author = metadata?.author.trim()
+  if (title) doc.setTitle(title)
+  if (author) doc.setAuthor(author)
+  doc.setProducer('PDFPRO')
+  doc.setCreator('PDFPRO')
+
   return doc.save()
 }

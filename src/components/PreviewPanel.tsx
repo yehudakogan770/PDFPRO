@@ -1,15 +1,28 @@
+import { useState } from 'react'
 import type { PageItem } from '../types'
-import { IconRotate, IconTrash } from './Icons'
+import { IconImage, IconRotate, IconSpinner, IconTrash } from './Icons'
 
 interface PreviewPanelProps {
   page: PageItem | null
   onRotate: (id: string) => void
   onRemove: (id: string) => void
+  onSaveAsImage: (id: string) => Promise<void>
 }
 
-export function PreviewPanel({ page, onRotate, onRemove }: PreviewPanelProps) {
+export function PreviewPanel({ page, onRotate, onRemove, onSaveAsImage }: PreviewPanelProps) {
+  const [isSaving, setIsSaving] = useState(false)
   const rotated90 = !!page && page.rotation % 180 !== 0
   const aspectRatio = page ? (rotated90 ? `${page.height} / ${page.width}` : `${page.width} / ${page.height}`) : '3 / 4'
+
+  const handleSave = async () => {
+    if (!page || isSaving) return
+    setIsSaving(true)
+    try {
+      await onSaveAsImage(page.id)
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   return (
     <aside className="lg:sticky lg:top-24 lg:self-start">
@@ -52,6 +65,15 @@ export function PreviewPanel({ page, onRotate, onRemove }: PreviewPanelProps) {
                 Remove
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={isSaving}
+              className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? <IconSpinner className="size-3.5" /> : <IconImage className="size-3.5" />}
+              {isSaving ? 'Saving…' : 'Save as image'}
+            </button>
           </>
         )}
       </div>

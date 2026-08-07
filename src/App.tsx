@@ -4,8 +4,11 @@ import type { PageItem, SourceDoc } from './types'
 import {
   PdfLoadError,
   createBlankPage,
+  downloadBlob,
   downloadBytes,
+  downloadPagesAsImages,
   ensurePdfExtension,
+  exportPageAsImage,
   isImageFile,
   loadImageFile,
   loadPdfFile,
@@ -26,6 +29,7 @@ import {
   IconDownload,
   IconFilePlus,
   IconFileText,
+  IconImage,
   IconPrinter,
   IconRotate,
   IconScissors,
@@ -55,6 +59,7 @@ function App() {
   const [previewPageId, setPreviewPageId] = useState<string | null>(null)
   const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot | null>(null)
   const [windowDragActive, setWindowDragActive] = useState(false)
+  const [isExportingImages, setIsExportingImages] = useState(false)
   const dragCounter = useRef(0)
   const undoTimerRef = useRef<number | null>(null)
   const pagesRef = useRef(pages)
@@ -236,6 +241,33 @@ function App() {
     setSelectedIds(new Set())
   }, [selectedIds])
 
+  const handleSaveAsImage = useCallback(
+    async (id: string) => {
+      const page = pagesRef.current.find((p) => p.id === id)
+      if (!page) return
+      try {
+        const blob = await exportPageAsImage(page, sourcesRef.current)
+        downloadBlob(blob, `page-${String(page.pageNumber).padStart(2, '0')}.png`)
+      } catch {
+        pushIssue('Something went wrong while saving this page as an image.')
+      }
+    },
+    [pushIssue],
+  )
+
+  const handleBulkSaveAsImages = useCallback(async () => {
+    if (selectedIds.size === 0 || isExportingImages) return
+    setIsExportingImages(true)
+    try {
+      const selected = pages.filter((p) => selectedIds.has(p.id))
+      await downloadPagesAsImages(selected, sources, 'page')
+    } catch {
+      pushIssue('Something went wrong while saving pages as images.')
+    } finally {
+      setIsExportingImages(false)
+    }
+  }, [pages, sources, selectedIds, isExportingImages, pushIssue])
+
   const handleMerge = useCallback(async () => {
     if (pages.length === 0 || isMerging) return
     setIsMerging(true)
@@ -389,6 +421,15 @@ function App() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => void handleBulkSaveAsImages()}
+                      disabled={isExportingImages}
+                      className={toolbarButtonClass}
+                    >
+                      {isExportingImages ? <IconSpinner className="size-3.5" /> : <IconImage className="size-3.5" />}
+                      Save as image
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleBulkRemove}
                       className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
                     >
@@ -463,7 +504,7 @@ function App() {
               onToggleSelect={handleToggleSelect}
               onPreview={(page) => setPreviewPageId(page.id)}
             />
-            <PreviewPanel page={previewPage} onRotate={handleRotate} onRemove={handleRemove} />
+            <PreviewPanel page={previewPage} onRotate={handleRotate} onRemove={handleRemove} onSaveAsImage={handleSaveAsImage} />
           </div>
         )}
 
@@ -490,7 +531,13 @@ function App() {
       </footer>
 
       {printModalOpen && (
-        <PrintLayoutModal pages={pages} sources={sources} onClose={() => setPrintModalOpen(false)} onError={pushIssue} />
+        <PrintLayoutModal
+          pages={pages}
+          sources={sources}
+          selectedIds={selectedIds}
+          onClose={() => setPrintModalOpen(false)}
+          onError={pushIssue}
+        />
       )}
 
       {splitModalOpen && (

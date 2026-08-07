@@ -7,6 +7,10 @@ GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
 
 const THUMBNAIL_WIDTH = 260
 
+/** The longest edge a page is rendered to when exported as a standalone
+ * image, in pixels -- comfortably print-quality without being excessive. */
+const EXPORT_IMAGE_LONG_EDGE = 2000
+
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
 }
@@ -240,8 +244,7 @@ export function ensurePdfExtension(name: string): string {
   return /\.pdf$/i.test(trimmed) ? trimmed : `${trimmed}.pdf`
 }
 
-export function downloadBytes(bytes: Uint8Array, filename: string): void {
-  const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' })
+export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -250,6 +253,10 @@ export function downloadBytes(bytes: Uint8Array, filename: string): void {
   a.click()
   a.remove()
   URL.revokeObjectURL(url)
+}
+
+export function downloadBytes(bytes: Uint8Array, filename: string): void {
+  downloadBlob(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }), filename)
 }
 
 /** Opens the browser's native print dialog for the given PDF bytes, via a
@@ -321,6 +328,48 @@ export async function downloadSplitChunks(
   for (const chunk of chunks) {
     const bytes = await mergePages(chunk.pages, sources)
     downloadBytes(bytes, ensurePdfExtension(chunk.filename))
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+}
+
+/** Renders one page to a PNG blob at print-quality resolution, honoring both
+ * the page's own baked-in rotation and any rotation applied in the editor. */
+export async function exportPageAsImage(pageItem: PageItem, sources: Map<string, SourceDoc>): Promise<Blob> {
+  const source = sources.get(pageItem.sourceId)
+  if (!source) throw new Error('Missing source document')
+
+  const pdf = await getDocument({ data: source.bytes.slice(0) }).promise
+  try {
+    const page = await pdf.getPage(pageItem.pageIndex + 1)
+    const totalRotation = ((page.rotate + pageItem.rotation) % 360 + 360) % 360
+    const unscaledViewport = page.getViewport({ scale: 1, rotation: totalRotation })
+    const scale = EXPORT_IMAGE_LONG_EDGE / Math.max(unscaledViewport.width, unscaledViewport.height)
+    const viewport = page.getViewport({ scale, rotation: totalRotation })
+
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.ceil(viewport.width))
+    canvas.height = Math.max(1, Math.ceil(viewport.height))
+    const canvasContext = canvas.getContext('2d')
+    if (!canvasContext) throw new Error('Canvas rendering is not supported in this browser.')
+
+    await page.render({ canvasContext, viewport }).promise
+    page.cleanup()
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    if (!blob) throw new Error('Failed to export this page as an image.')
+    return blob
+  } finally {
+    await pdf.loadingTask.destroy()
+  }
+}
+
+/** Exports each given page as its own PNG, staggered so browsers don't
+ * throttle a burst of same-gesture downloads. */
+export async function downloadPagesAsImages(pages: PageItem[], sources: Map<string, SourceDoc>, baseName: string): Promise<void> {
+  for (let i = 0; i < pages.length; i++) {
+    const blob = await exportPageAsImage(pages[i], sources)
+    const label = pages.length === 1 ? '' : `-${String(i + 1).padStart(2, '0')}`
+    downloadBlob(blob, `${baseName}${label}.png`)
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
 }

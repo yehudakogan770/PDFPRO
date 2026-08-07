@@ -1,20 +1,64 @@
 # PDFPRO
 
-Merge multiple PDFs into one. Import any number of files, drag pages into any
-order, rotate or remove individual pages, then download the combined PDF.
+**A complete PDF workstation that runs entirely in your browser.**
 
-Everything runs client-side in the browser — files are never uploaded to a
-server.
+Merge, reorder, split, and print-format PDFs; build saddle-stitched booklets
+and multi-up print layouts; stamp page numbers, watermarks, and corner marks;
+drop in JPGs/PNGs as pages; and export back out as PDF or PNG — all without a
+single byte ever leaving your device.
+
+**Live app:** https://yehudakogan770.github.io/PDFPRO/
 
 ## Features
 
-- Import multiple PDF files at once (click to browse or drag & drop, including
-  dropping anywhere on the page)
-- Every page from every imported file shows up as a thumbnail in one grid
-- Drag and drop to reorder pages, across files, in any order
-- Rotate or remove individual pages
-- Add more PDFs at any time before exporting
-- Merge everything into a single PDF and download it with a custom filename
+### Import
+- Drag and drop PDFs, JPGs, or PNGs anywhere on the page, or click to browse
+- Import any number of files at once, with per-file progress and per-file
+  error reporting that doesn't block the rest of the batch
+- Images are automatically placed on their own page, scaled to a sensible size
+- Add blank pages, then drag them wherever you need extra space
+
+### Organize
+- Every page from every imported file shows up as a thumbnail in one grid,
+  regardless of source file
+- Drag and drop to reorder pages, across files, in any order (mouse, touch,
+  and full keyboard support)
+- Rotate, duplicate, or remove individual pages
+- Multi-select pages (click, Ctrl/Cmd+A, or Escape to clear) for bulk rotate,
+  duplicate, remove, or "save as image"
+- Reverse the entire page order in one click
+- Undo the last destructive change (remove / bulk remove / clear all) from a
+  toast notification, or with Ctrl/Cmd+Z
+- A persistent preview panel always shows the selected page at full detail —
+  no dialog to open or close
+- Full keyboard shortcuts: Ctrl/Cmd+Z undo, Ctrl/Cmd+A select all, Escape to
+  deselect, Delete/Backspace to remove the current selection
+
+### Print Layout Studio
+- **Normal** — no layout changes, just stamps/metadata
+- **Booklet** — automatic saddle-stitch imposition: pages are reordered and
+  paired two-per-sheet so a folded, stapled stack reads in order, with
+  automatic blank-page padding when the count doesn't divide evenly
+- **1-up / 2-up / 4-up** — scale every page onto a uniform paper size, one,
+  two, or four to a sheet
+- Paper size presets (A4, Letter, Legal) or a fully custom size in mm or
+  inches
+- Optional page numbers, a diagonal watermark with custom text, and corner
+  trim/alignment marks — all correctly oriented even on rotated pages
+- Document title and author metadata embedded in the exported PDF
+- Restrict any layout to just the currently-selected pages
+- Print directly from the browser's print dialog, or download the generated
+  PDF
+
+### Split & export
+- Split the current page set into one-PDF-per-page, or fixed-size chunks
+  every N pages, each downloaded with a custom filename prefix
+- Export any page — or a whole multi-selection — as a high-resolution PNG
+- Merge everything into a single PDF with a custom filename
+
+### Privacy by design
+- 100% client-side — there is no server, no upload, no analytics
+- Your files never leave your device; closing the tab discards everything
 
 ## Getting started
 
@@ -33,10 +77,15 @@ npm run preview  # preview the production build locally
 npm run lint     # run ESLint
 ```
 
+Pushes to `main` automatically build and deploy to GitHub Pages via
+[`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml).
+
 ## Stack
 
-- React + TypeScript + Vite
-- Tailwind CSS
-- [pdf-lib](https://github.com/Hopding/pdf-lib) for merging pages into the output PDF
-- [pdf.js](https://github.com/mozilla/pdf.js) for rendering page thumbnails
+- React 19 + TypeScript + Vite
+- Tailwind CSS v4
+- [pdf-lib](https://github.com/Hopding/pdf-lib) for building and stamping
+  the output PDFs
+- [pdf.js](https://github.com/mozilla/pdf.js) for rendering page thumbnails,
+  previews, and PNG export
 - [dnd-kit](https://dndkit.com/) for drag-and-drop page reordering

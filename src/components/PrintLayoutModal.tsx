@@ -8,6 +8,7 @@ import { IconDownload, IconPrinter, IconSpinner, IconX } from './Icons'
 interface PrintLayoutModalProps {
   pages: PageItem[]
   sources: Map<string, SourceDoc>
+  selectedIds: Set<string>
   onClose: () => void
   onError: (message: string) => void
 }
@@ -48,7 +49,7 @@ const MODE_OPTIONS: { value: PrintLayoutMode; label: string; description: string
 
 const CUSTOM_KEY = 'custom'
 
-export function PrintLayoutModal({ pages, sources, onClose, onError }: PrintLayoutModalProps) {
+export function PrintLayoutModal({ pages, sources, selectedIds, onClose, onError }: PrintLayoutModalProps) {
   const [mode, setMode] = useState<PrintLayoutMode>('normal')
   const [paperKey, setPaperKey] = useState<string>(PAPER_PRESETS[0].key)
   const [customUnit, setCustomUnit] = useState<'mm' | 'in'>('mm')
@@ -58,10 +59,18 @@ export function PrintLayoutModal({ pages, sources, onClose, onError }: PrintLayo
   const [pageNumbers, setPageNumbers] = useState(false)
   const [watermarkText, setWatermarkText] = useState('')
   const [cornerMarks, setCornerMarks] = useState(false)
+  const [onlySelected, setOnlySelected] = useState(selectedIds.size > 0)
+  const [title, setTitle] = useState('')
+  const [author, setAuthor] = useState('')
   const [isBuilding, setIsBuilding] = useState(false)
   const filenameTouched = useRef(false)
 
-  const booklet = useMemo(() => bookletPageCount(pages.length), [pages.length])
+  const effectivePages = useMemo(
+    () => (onlySelected && selectedIds.size > 0 ? pages.filter((p) => selectedIds.has(p.id)) : pages),
+    [pages, selectedIds, onlySelected],
+  )
+
+  const booklet = useMemo(() => bookletPageCount(effectivePages.length), [effectivePages.length])
   const activeMode = MODE_OPTIONS.find((option) => option.value === mode)
 
   const paperPoints: PaperPoints = useMemo(() => {
@@ -87,10 +96,11 @@ export function PrintLayoutModal({ pages, sources, onClose, onError }: PrintLayo
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  const build = () => buildPrintLayoutPdf(mode, pages, sources, paperPoints, { pageNumbers, watermarkText, cornerMarks })
+  const build = () =>
+    buildPrintLayoutPdf(mode, effectivePages, sources, paperPoints, { pageNumbers, watermarkText, cornerMarks }, { title, author })
 
   const handleDownload = async () => {
-    if (pages.length === 0 || isBuilding) return
+    if (effectivePages.length === 0 || isBuilding) return
     setIsBuilding(true)
     try {
       const bytes = await build()
@@ -104,7 +114,7 @@ export function PrintLayoutModal({ pages, sources, onClose, onError }: PrintLayo
   }
 
   const handlePrint = async () => {
-    if (pages.length === 0 || isBuilding) return
+    if (effectivePages.length === 0 || isBuilding) return
     setIsBuilding(true)
     try {
       const bytes = await build()
@@ -157,6 +167,18 @@ export function PrintLayoutModal({ pages, sources, onClose, onError }: PrintLayo
           </button>
         </div>
 
+        {selectedIds.size > 0 && (
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={onlySelected}
+              onChange={(e) => setOnlySelected(e.target.checked)}
+              className="size-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+            />
+            Only include the {selectedIds.size} selected page{selectedIds.size === 1 ? '' : 's'}
+          </label>
+        )}
+
         <div className="mt-4 grid grid-cols-3 gap-2">
           {MODE_OPTIONS.map((option) => (
             <button
@@ -175,9 +197,9 @@ export function PrintLayoutModal({ pages, sources, onClose, onError }: PrintLayo
         </div>
         {activeMode && <p className="mt-2.5 text-xs leading-relaxed text-slate-500">{activeMode.description}</p>}
 
-        {mode === 'booklet' && pages.length > 0 && (
+        {mode === 'booklet' && effectivePages.length > 0 && (
           <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600">
-            {pages.length} page{pages.length === 1 ? '' : 's'} → {booklet.sheets} sheet{booklet.sheets === 1 ? '' : 's'} of
+            {effectivePages.length} page{effectivePages.length === 1 ? '' : 's'} → {booklet.sheets} sheet{booklet.sheets === 1 ? '' : 's'} of
             paper{booklet.blanks > 0 && `, plus ${booklet.blanks} blank page${booklet.blanks === 1 ? '' : 's'} added to pad evenly`}.
             Print double-sided with <strong>flip on short edge</strong>, then fold the whole stack in half together and
             staple along the crease.
@@ -252,6 +274,29 @@ export function PrintLayoutModal({ pages, sources, onClose, onError }: PrintLayo
           </div>
         )}
 
+        <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
+          <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-600">
+            Title
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Optional document title"
+              className="w-full min-w-0 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            />
+          </label>
+          <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-600">
+            Author
+            <input
+              type="text"
+              value={author}
+              onChange={(e) => setAuthor(e.target.value)}
+              placeholder="Optional author name"
+              className="w-full min-w-0 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+            />
+          </label>
+        </div>
+
         <div className="mt-4 space-y-2.5 border-t border-slate-100 pt-4">
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input
@@ -294,7 +339,7 @@ export function PrintLayoutModal({ pages, sources, onClose, onError }: PrintLayo
           <button
             type="button"
             onClick={handlePrint}
-            disabled={pages.length === 0 || isBuilding}
+            disabled={effectivePages.length === 0 || isBuilding}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <IconPrinter className="size-4" />
@@ -303,7 +348,7 @@ export function PrintLayoutModal({ pages, sources, onClose, onError }: PrintLayo
           <button
             type="button"
             onClick={handleDownload}
-            disabled={pages.length === 0 || isBuilding}
+            disabled={effectivePages.length === 0 || isBuilding}
             className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             {isBuilding ? <IconSpinner className="size-4" /> : <IconDownload className="size-4" />}
