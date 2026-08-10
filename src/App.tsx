@@ -15,6 +15,7 @@ import {
   mergePages,
   uid,
 } from './lib/pdf'
+import type { LoadedPdf } from './lib/pdf'
 import { Dropzone } from './components/Dropzone'
 import { PageGrid } from './components/PageGrid'
 import { EmptyState } from './components/EmptyState'
@@ -25,6 +26,7 @@ import { SplitModal } from './components/SplitModal'
 import { CompressModal } from './components/CompressModal'
 import { ShortcutsHelp } from './components/ShortcutsHelp'
 import { PageLightbox } from './components/PageLightbox'
+import { TextEditModal } from './components/TextEditModal'
 import { UndoToast } from './components/UndoToast'
 import {
   IconCopy,
@@ -63,6 +65,7 @@ function App() {
   const [printModalOpen, setPrintModalOpen] = useState(false)
   const [splitModalOpen, setSplitModalOpen] = useState(false)
   const [lightboxPageId, setLightboxPageId] = useState<string | null>(null)
+  const [textEditPageId, setTextEditPageId] = useState<string | null>(null)
   const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot | null>(null)
   const [windowDragActive, setWindowDragActive] = useState(false)
   const [isExportingImages, setIsExportingImages] = useState(false)
@@ -268,6 +271,49 @@ function App() {
     },
     [pushIssue],
   )
+
+  const handleApplyTextEdits = useCallback(
+    async (pageId: string, loaded: LoadedPdf) => {
+      pushUndoSnapshot('Text edited')
+      const newSource = loaded.source
+      const newPage = loaded.pages[0]
+      setSources((prev) => {
+        const next = new Map(prev)
+        next.set(newSource.id, newSource)
+        return next
+      })
+      setPages((prev) =>
+        prev.map((p) =>
+          p.id === pageId
+            ? {
+                ...p,
+                sourceId: newPage.sourceId,
+                pageIndex: newPage.pageIndex,
+                rotation: newPage.rotation,
+                thumbnailUrl: newPage.thumbnailUrl,
+                width: newPage.width,
+                height: newPage.height,
+              }
+            : p,
+        ),
+      )
+    },
+    [pushUndoSnapshot],
+  )
+
+  const handleEditTextFromLightbox = useCallback((id: string) => {
+    // The lightbox and the text editor are both full-screen modals with their
+    // own "Escape closes me" listener; keeping both mounted at once means a
+    // single Escape (e.g. to dismiss an in-progress text box) closes both.
+    // Close the lightbox while editing and reopen it on the same page after.
+    setLightboxPageId(null)
+    setTextEditPageId(id)
+  }, [])
+
+  const handleCloseTextEditor = useCallback(() => {
+    if (textEditPageId !== null) setLightboxPageId(textEditPageId)
+    setTextEditPageId(null)
+  }, [textEditPageId])
 
   const handleBulkSaveAsImages = useCallback(async () => {
     if (selectedIds.size === 0 || isExportingImages) return
@@ -632,8 +678,24 @@ function App() {
           onRotate={handleRotate}
           onRemove={handleRemove}
           onSaveAsImage={handleSaveAsImage}
+          onEditText={handleEditTextFromLightbox}
         />
       )}
+
+      {textEditPageId &&
+        (() => {
+          const editPage = pages.find((p) => p.id === textEditPageId)
+          if (!editPage) return null
+          return (
+            <TextEditModal
+              page={editPage}
+              sources={sources}
+              onClose={handleCloseTextEditor}
+              onApply={handleApplyTextEdits}
+              onError={pushIssue}
+            />
+          )
+        })()}
 
       {undoSnapshot && (
         <UndoToast message={undoSnapshot.message} onUndo={handleUndo} onDismiss={() => setUndoSnapshot(null)} />

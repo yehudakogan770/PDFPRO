@@ -19,20 +19,30 @@ single byte ever leaving your device.
 - Add blank pages, then drag them wherever you need extra space
 
 ### Organize
-- Every page from every imported file shows up as a thumbnail in one grid,
-  regardless of source file
+- Every page from every imported file shows up as a large, readable thumbnail
+  in one grid, regardless of source file
 - Drag and drop to reorder pages, across files, in any order (mouse, touch,
   and full keyboard support)
-- Rotate, duplicate, or remove individual pages
+- Rotate (clockwise or counter-clockwise), duplicate, or remove individual
+  pages
 - Multi-select pages (click, Ctrl/Cmd+A, or Escape to clear) for bulk rotate,
-  duplicate, remove, or "save as image"
+  duplicate, remove, "save as image," or "extract as PDF"
 - Reverse the entire page order in one click
-- Undo the last destructive change (remove / bulk remove / clear all) from a
-  toast notification, or with Ctrl/Cmd+Z
-- A persistent preview panel always shows the selected page at full detail —
-  no dialog to open or close
-- Full keyboard shortcuts: Ctrl/Cmd+Z undo, Ctrl/Cmd+A select all, Escape to
-  deselect, Delete/Backspace to remove the current selection
+- Undo the last destructive change (remove / bulk remove / clear all / text
+  edit) from a toast notification, or with Ctrl/Cmd+Z
+- Click any page to open a full-size lightbox with prev/next paging through
+  the whole document, plus rotate/edit-text/save-as-image/remove
+- Full keyboard shortcuts (press `?` for the full list): Ctrl/Cmd+Z undo,
+  Ctrl/Cmd+A select all, Escape to deselect, Delete/Backspace to remove the
+  current selection
+
+### Edit text
+- Click into any detected line of text on a page to edit it in place, or
+  switch to "Add text" and click anywhere to insert something new
+- Adjustable font size and color; edits are baked into a fresh copy of the
+  page (covered and redrawn, not securely removed from the underlying file)
+- Gracefully detects pages with no text layer (e.g. scanned images) and
+  still lets you add new text on top
 
 ### Print Layout Studio
 - **Normal** — no layout changes, just stamps/metadata
@@ -43,16 +53,24 @@ single byte ever leaving your device.
   two, or four to a sheet
 - Paper size presets (A4, Letter, Legal) or a fully custom size in mm or
   inches
-- Optional page numbers, a diagonal watermark with custom text, and corner
-  trim/alignment marks — all correctly oriented even on rotated pages
+- Optional page numbers (6 positions, 3 formats), a diagonal watermark with
+  custom text, and corner trim/alignment marks — all correctly oriented even
+  on rotated pages
 - Document title and author metadata embedded in the exported PDF
 - Restrict any layout to just the currently-selected pages
 - Print directly from the browser's print dialog, or download the generated
   PDF
 
+### Compress
+- Shrinks a PDF by rasterizing pages to JPEG at a chosen quality (High /
+  Balanced / Smallest size), with an "only selected pages" toggle
+- Reports the before/after size and warns when compression didn't actually
+  help (common for already-compact, text-only PDFs)
+
 ### Split & export
 - Split the current page set into one-PDF-per-page, or fixed-size chunks
   every N pages, each downloaded with a custom filename prefix
+- Extract just the selected pages as their own PDF
 - Export any page — or a whole multi-selection — as a high-resolution PNG
 - Merge everything into a single PDF with a custom filename
 

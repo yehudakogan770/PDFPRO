@@ -1,4 +1,4 @@
-import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist'
+import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy, type PDFPageProxy } from 'pdfjs-dist'
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import { PDFDocument, PageSizes, degrees } from 'pdf-lib'
 import type { PageItem, SourceDoc } from '../types'
@@ -11,8 +11,28 @@ const THUMBNAIL_WIDTH = 520
  * image, in pixels -- comfortably print-quality without being excessive. */
 const EXPORT_IMAGE_LONG_EDGE = 2000
 
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+}
+
+/** Renders a pdf.js page to a thumbnail data URL at THUMBNAIL_WIDTH, honoring
+ * the page's own rotation (pdf.js defaults to it when none is given). Also
+ * returns the page's visual (rotation-applied) point dimensions. */
+export async function renderPageThumbnail(page: PDFPageProxy, dpr: number): Promise<{ url: string; width: number; height: number }> {
+  const unscaledViewport = page.getViewport({ scale: 1 })
+  const scale = (THUMBNAIL_WIDTH / unscaledViewport.width) * dpr
+  const viewport = page.getViewport({ scale })
+
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.ceil(viewport.width))
+  canvas.height = Math.max(1, Math.ceil(viewport.height))
+  const canvasContext = canvas.getContext('2d')
+  if (!canvasContext) throw new Error('Canvas rendering is not supported in this browser.')
+
+  await page.render({ canvasContext, viewport }).promise
+  const url = canvas.toDataURL('image/jpeg', 0.82)
+  page.cleanup()
+  return { url, width: unscaledViewport.width, height: unscaledViewport.height }
 }
 
 export function uid(): string {
@@ -65,19 +85,12 @@ export async function loadPdfFile(file: File): Promise<LoadedPdf> {
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
-    const unscaledViewport = page.getViewport({ scale: 1 })
-    const scale = (THUMBNAIL_WIDTH / unscaledViewport.width) * dpr
-    const viewport = page.getViewport({ scale })
-
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.ceil(viewport.width))
-    canvas.height = Math.max(1, Math.ceil(viewport.height))
-    const canvasContext = canvas.getContext('2d')
-    if (!canvasContext) throw new PdfLoadError(file.name, 'Canvas rendering is not supported in this browser.')
-
-    await page.render({ canvasContext, viewport }).promise
-    const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.82)
-    page.cleanup()
+    let rendered: { url: string; width: number; height: number }
+    try {
+      rendered = await renderPageThumbnail(page, dpr)
+    } catch {
+      throw new PdfLoadError(file.name, 'Canvas rendering is not supported in this browser.')
+    }
 
     pages.push({
       id: uid(),
@@ -86,9 +99,9 @@ export async function loadPdfFile(file: File): Promise<LoadedPdf> {
       pageIndex: i - 1,
       pageNumber: i,
       rotation: 0,
-      thumbnailUrl,
-      width: unscaledViewport.width,
-      height: unscaledViewport.height,
+      thumbnailUrl: rendered.url,
+      width: rendered.width,
+      height: rendered.height,
     })
   }
 
