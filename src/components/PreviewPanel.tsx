@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import type { PageItem } from '../types'
-import { IconImage, IconRotate, IconSpinner, IconTrash } from './Icons'
+import { IconImage, IconRotate, IconRotateCcw, IconSpinner, IconTrash } from './Icons'
 
 interface PreviewPanelProps {
   page: PageItem | null
-  onRotate: (id: string) => void
+  onRotate: (id: string, direction?: 1 | -1) => void
   onRemove: (id: string) => void
   onSaveAsImage: (id: string) => Promise<void>
 }
@@ -50,11 +50,21 @@ export function PreviewPanel({ page, onRotate, onRemove, onSaveAsImage }: Previe
             <div className="mt-3 flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => onRotate(page.id)}
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => onRotate(page.id, -1)}
+                aria-label="Rotate counter-clockwise"
+                title="Rotate counter-clockwise"
+                className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-slate-700 hover:bg-slate-50"
+              >
+                <IconRotateCcw className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onRotate(page.id, 1)}
+                aria-label="Rotate clockwise"
+                title="Rotate clockwise"
+                className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-slate-700 hover:bg-slate-50"
               >
                 <IconRotate className="size-3.5" />
-                Rotate
               </button>
               <button
                 type="button"

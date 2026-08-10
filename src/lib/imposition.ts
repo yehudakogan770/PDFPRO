@@ -18,8 +18,13 @@ export const MM_PER_POINT = 25.4 / 72
 export const POINTS_PER_MM = 72 / 25.4
 export const POINTS_PER_INCH = 72
 
+export type PageNumberPosition = 'bottom-center' | 'bottom-left' | 'bottom-right' | 'top-center' | 'top-left' | 'top-right'
+export type PageNumberFormat = 'number' | 'number-of-total' | 'page-x-of-y'
+
 export interface StampOptions {
   pageNumbers: boolean
+  pageNumberPosition: PageNumberPosition
+  pageNumberFormat: PageNumberFormat
   watermarkText: string
   cornerMarks: boolean
 }
@@ -273,16 +278,37 @@ function drawWatermark(page: PDFPage, text: string, font: PDFFont): void {
   })
 }
 
-function drawPageNumber(page: PDFPage, position: number, total: number, font: PDFFont): void {
+function formatPageNumber(format: PageNumberFormat, position: number, total: number): string {
+  if (format === 'number') return `${position}`
+  if (format === 'page-x-of-y') return `Page ${position} of ${total}`
+  return `${position} / ${total}`
+}
+
+function drawPageNumber(
+  page: PDFPage,
+  position: number,
+  total: number,
+  font: PDFFont,
+  placement: PageNumberPosition,
+  format: PageNumberFormat,
+): void {
   const rawWidth = page.getWidth()
   const rawHeight = page.getHeight()
   const rotation = getVisualRotation(page)
   const visualWidth = rotation % 180 !== 0 ? rawHeight : rawWidth
+  const visualHeight = rotation % 180 !== 0 ? rawWidth : rawHeight
 
-  const text = `${position} / ${total}`
+  const text = formatPageNumber(format, position, total)
   const size = 9
+  const margin = 12
   const textWidth = font.widthOfTextAtSize(text, size)
-  const origin = visualPointToRaw(rotation, rawWidth, rawHeight, (visualWidth - textWidth) / 2, 12)
+
+  const [vertical, horizontal] = placement.split('-') as ['top' | 'bottom', 'left' | 'center' | 'right']
+  const visualX =
+    horizontal === 'left' ? margin : horizontal === 'right' ? visualWidth - margin - textWidth : (visualWidth - textWidth) / 2
+  const visualY = vertical === 'top' ? visualHeight - margin - size * 0.8 : margin
+
+  const origin = visualPointToRaw(rotation, rawWidth, rawHeight, visualX, visualY)
   page.drawText(text, {
     x: origin.x,
     y: origin.y,
@@ -302,7 +328,7 @@ async function applyStamps(doc: PDFDocument, options: StampOptions): Promise<voi
   pages.forEach((page, index) => {
     if (options.cornerMarks) drawCornerMarks(page)
     if (watermarkText) drawWatermark(page, watermarkText, font)
-    if (options.pageNumbers) drawPageNumber(page, index + 1, pages.length, font)
+    if (options.pageNumbers) drawPageNumber(page, index + 1, pages.length, font, options.pageNumberPosition, options.pageNumberFormat)
   })
 }
 

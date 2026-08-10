@@ -22,16 +22,22 @@ import { ImportIssues } from './components/ImportIssues'
 import type { ImportIssue } from './components/ImportIssues'
 import { PrintLayoutModal } from './components/PrintLayoutModal'
 import { SplitModal } from './components/SplitModal'
+import { CompressModal } from './components/CompressModal'
+import { ShortcutsHelp } from './components/ShortcutsHelp'
 import { PreviewPanel } from './components/PreviewPanel'
 import { UndoToast } from './components/UndoToast'
 import {
   IconCopy,
   IconDownload,
+  IconFileOutput,
   IconFilePlus,
   IconFileText,
+  IconHelpCircle,
   IconImage,
+  IconMinimize,
   IconPrinter,
   IconRotate,
+  IconRotateCcw,
   IconScissors,
   IconSpinner,
   IconTrash,
@@ -60,6 +66,9 @@ function App() {
   const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot | null>(null)
   const [windowDragActive, setWindowDragActive] = useState(false)
   const [isExportingImages, setIsExportingImages] = useState(false)
+  const [isExtracting, setIsExtracting] = useState(false)
+  const [compressModalOpen, setCompressModalOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const dragCounter = useRef(0)
   const undoTimerRef = useRef<number | null>(null)
   const pagesRef = useRef(pages)
@@ -168,8 +177,8 @@ function App() {
     }
   }, [pages, pushIssue])
 
-  const handleRotate = useCallback((id: string) => {
-    setPages((prev) => prev.map((p) => (p.id === id ? { ...p, rotation: (p.rotation + 90) % 360 } : p)))
+  const handleRotate = useCallback((id: string, direction: 1 | -1 = 1) => {
+    setPages((prev) => prev.map((p) => (p.id === id ? { ...p, rotation: (p.rotation + 90 * direction + 360) % 360 } : p)))
   }, [])
 
   const handleRemove = useCallback(
@@ -225,9 +234,14 @@ function App() {
     setSelectedIds(new Set())
   }, [selectedIds, pushUndoSnapshot])
 
-  const handleBulkRotate = useCallback(() => {
-    setPages((prev) => prev.map((p) => (selectedIds.has(p.id) ? { ...p, rotation: (p.rotation + 90) % 360 } : p)))
-  }, [selectedIds])
+  const handleBulkRotate = useCallback(
+    (direction: 1 | -1 = 1) => {
+      setPages((prev) =>
+        prev.map((p) => (selectedIds.has(p.id) ? { ...p, rotation: (p.rotation + 90 * direction + 360) % 360 } : p)),
+      )
+    },
+    [selectedIds],
+  )
 
   const handleBulkDuplicate = useCallback(() => {
     setPages((prev) => {
@@ -267,6 +281,20 @@ function App() {
       setIsExportingImages(false)
     }
   }, [pages, sources, selectedIds, isExportingImages, pushIssue])
+
+  const handleExtractSelected = useCallback(async () => {
+    if (selectedIds.size === 0 || isExtracting) return
+    setIsExtracting(true)
+    try {
+      const selected = pages.filter((p) => selectedIds.has(p.id))
+      const bytes = await mergePages(selected, sources)
+      downloadBytes(bytes, ensurePdfExtension(selected.length === 1 ? 'page.pdf' : 'extracted.pdf'))
+    } catch {
+      pushIssue('Something went wrong while extracting the selected pages.')
+    } finally {
+      setIsExtracting(false)
+    }
+  }, [pages, sources, selectedIds, isExtracting, pushIssue])
 
   const handleMerge = useCallback(async () => {
     if (pages.length === 0 || isMerging) return
@@ -315,6 +343,11 @@ function App() {
       if (mod && e.key.toLowerCase() === 'a') {
         e.preventDefault()
         handleSelectAll()
+        return
+      }
+      if (e.key === '?') {
+        e.preventDefault()
+        setShortcutsOpen((prev) => !prev)
         return
       }
       if (e.key === 'Escape' && selectedIds.size > 0) {
@@ -383,6 +416,16 @@ function App() {
             {pages.length > 0 && (
               <button
                 type="button"
+                onClick={() => setCompressModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <IconMinimize className="size-4" />
+                Compress
+              </button>
+            )}
+            {pages.length > 0 && (
+              <button
+                type="button"
                 onClick={() => setPrintModalOpen(true)}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
@@ -415,9 +458,23 @@ function App() {
                       <IconCopy className="size-3.5" />
                       Duplicate
                     </button>
-                    <button type="button" onClick={handleBulkRotate} className={toolbarButtonClass}>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkRotate(-1)}
+                      aria-label="Rotate selected pages counter-clockwise"
+                      title="Rotate counter-clockwise"
+                      className={toolbarButtonClass}
+                    >
+                      <IconRotateCcw className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkRotate(1)}
+                      aria-label="Rotate selected pages clockwise"
+                      title="Rotate clockwise"
+                      className={toolbarButtonClass}
+                    >
                       <IconRotate className="size-3.5" />
-                      Rotate
                     </button>
                     <button
                       type="button"
@@ -427,6 +484,15 @@ function App() {
                     >
                       {isExportingImages ? <IconSpinner className="size-3.5" /> : <IconImage className="size-3.5" />}
                       Save as image
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleExtractSelected()}
+                      disabled={isExtracting}
+                      className={toolbarButtonClass}
+                    >
+                      {isExtracting ? <IconSpinner className="size-3.5" /> : <IconFileOutput className="size-3.5" />}
+                      Extract as PDF
                     </button>
                     <button
                       type="button"
@@ -526,8 +592,16 @@ function App() {
         )}
       </main>
 
-      <footer className="pb-10 pt-4 text-center text-xs text-slate-400">
-        Everything runs locally in your browser — your files are never uploaded anywhere.
+      <footer className="flex items-center justify-center gap-3 pb-10 pt-4 text-center text-xs text-slate-400">
+        <span>Everything runs locally in your browser — your files are never uploaded anywhere.</span>
+        <button
+          type="button"
+          onClick={() => setShortcutsOpen(true)}
+          className="inline-flex items-center gap-1 text-slate-400 underline decoration-dotted underline-offset-2 hover:text-slate-600"
+        >
+          <IconHelpCircle className="size-3.5" />
+          Keyboard shortcuts
+        </button>
       </footer>
 
       {printModalOpen && (
@@ -543,6 +617,18 @@ function App() {
       {splitModalOpen && (
         <SplitModal pages={pages} sources={sources} onClose={() => setSplitModalOpen(false)} onError={pushIssue} />
       )}
+
+      {compressModalOpen && (
+        <CompressModal
+          pages={pages}
+          sources={sources}
+          selectedIds={selectedIds}
+          onClose={() => setCompressModalOpen(false)}
+          onError={pushIssue}
+        />
+      )}
+
+      {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
 
       {undoSnapshot && (
         <UndoToast message={undoSnapshot.message} onUndo={handleUndo} onDismiss={() => setUndoSnapshot(null)} />

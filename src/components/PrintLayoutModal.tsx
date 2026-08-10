@@ -1,9 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PageItem, SourceDoc } from '../types'
 import { PAPER_PRESETS, POINTS_PER_INCH, POINTS_PER_MM, bookletPageCount, buildPrintLayoutPdf } from '../lib/imposition'
-import type { PaperPoints, PrintLayoutMode } from '../lib/imposition'
+import type { PageNumberFormat, PageNumberPosition, PaperPoints, PrintLayoutMode } from '../lib/imposition'
 import { downloadBytes, ensurePdfExtension, printBytes } from '../lib/pdf'
 import { IconDownload, IconPrinter, IconSpinner, IconX } from './Icons'
+
+const PAGE_NUMBER_POSITIONS: { value: PageNumberPosition; label: string }[] = [
+  { value: 'bottom-center', label: 'Bottom center' },
+  { value: 'bottom-left', label: 'Bottom left' },
+  { value: 'bottom-right', label: 'Bottom right' },
+  { value: 'top-center', label: 'Top center' },
+  { value: 'top-left', label: 'Top left' },
+  { value: 'top-right', label: 'Top right' },
+]
+
+const PAGE_NUMBER_FORMATS: { value: PageNumberFormat; label: string }[] = [
+  { value: 'number-of-total', label: '1 / N' },
+  { value: 'number', label: '1' },
+  { value: 'page-x-of-y', label: 'Page 1 of N' },
+]
 
 interface PrintLayoutModalProps {
   pages: PageItem[]
@@ -57,6 +72,8 @@ export function PrintLayoutModal({ pages, sources, selectedIds, onClose, onError
   const [customHeight, setCustomHeight] = useState(297)
   const [outputName, setOutputName] = useState('printable.pdf')
   const [pageNumbers, setPageNumbers] = useState(false)
+  const [pageNumberPosition, setPageNumberPosition] = useState<PageNumberPosition>('bottom-center')
+  const [pageNumberFormat, setPageNumberFormat] = useState<PageNumberFormat>('number-of-total')
   const [watermarkText, setWatermarkText] = useState('')
   const [cornerMarks, setCornerMarks] = useState(false)
   const [onlySelected, setOnlySelected] = useState(selectedIds.size > 0)
@@ -97,7 +114,14 @@ export function PrintLayoutModal({ pages, sources, selectedIds, onClose, onError
   }, [onClose])
 
   const build = () =>
-    buildPrintLayoutPdf(mode, effectivePages, sources, paperPoints, { pageNumbers, watermarkText, cornerMarks }, { title, author })
+    buildPrintLayoutPdf(
+      mode,
+      effectivePages,
+      sources,
+      paperPoints,
+      { pageNumbers, pageNumberPosition, pageNumberFormat, watermarkText, cornerMarks },
+      { title, author },
+    )
 
   const handleDownload = async () => {
     if (effectivePages.length === 0 || isBuilding) return
@@ -307,6 +331,32 @@ export function PrintLayoutModal({ pages, sources, selectedIds, onClose, onError
             />
             Add page numbers
           </label>
+          {pageNumbers && (
+            <div className="ml-6 flex flex-wrap items-center gap-2">
+              <select
+                value={pageNumberPosition}
+                onChange={(e) => setPageNumberPosition(e.target.value as PageNumberPosition)}
+                className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              >
+                {PAGE_NUMBER_POSITIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={pageNumberFormat}
+                onChange={(e) => setPageNumberFormat(e.target.value as PageNumberFormat)}
+                className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              >
+                {PAGE_NUMBER_FORMATS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
