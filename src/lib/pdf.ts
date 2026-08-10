@@ -5,7 +5,7 @@ import type { PageItem, SourceDoc } from '../types'
 
 GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
 
-const THUMBNAIL_WIDTH = 260
+const THUMBNAIL_WIDTH = 520
 
 /** The longest edge a page is rendered to when exported as a standalone
  * image, in pixels -- comfortably print-quality without being excessive. */

@@ -24,7 +24,7 @@ import { PrintLayoutModal } from './components/PrintLayoutModal'
 import { SplitModal } from './components/SplitModal'
 import { CompressModal } from './components/CompressModal'
 import { ShortcutsHelp } from './components/ShortcutsHelp'
-import { PreviewPanel } from './components/PreviewPanel'
+import { PageLightbox } from './components/PageLightbox'
 import { UndoToast } from './components/UndoToast'
 import {
   IconCopy,
@@ -62,7 +62,7 @@ function App() {
   const [outputName, setOutputName] = useState('merged.pdf')
   const [printModalOpen, setPrintModalOpen] = useState(false)
   const [splitModalOpen, setSplitModalOpen] = useState(false)
-  const [previewPageId, setPreviewPageId] = useState<string | null>(null)
+  const [lightboxPageId, setLightboxPageId] = useState<string | null>(null)
   const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot | null>(null)
   const [windowDragActive, setWindowDragActive] = useState(false)
   const [isExportingImages, setIsExportingImages] = useState(false)
@@ -322,10 +322,6 @@ function App() {
     return `${pages.length} ${pageWord} from ${fileCount} ${fileWord}`
   }, [pages.length, fileCount])
 
-  const previewPage = useMemo(() => {
-    if (pages.length === 0) return null
-    return pages.find((p) => p.id === previewPageId) ?? pages[0]
-  }, [pages, previewPageId])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -400,7 +396,7 @@ function App() {
       onDrop={onWindowDrop}
     >
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-[1800px] items-center gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2">
             <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
               <IconFileText className="size-4.5" />
@@ -449,7 +445,7 @@ function App() {
 
         {pages.length > 0 && (
           <div className="border-t border-slate-100 bg-slate-50/70">
-            <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-4 py-2 sm:px-6">
+            <div className="mx-auto flex max-w-[1800px] flex-wrap items-center gap-2 px-4 py-2 sm:px-6">
               {selectedIds.size > 0 ? (
                 <>
                   <p className="text-sm font-medium text-slate-700">{selectedIds.size} selected</p>
@@ -553,25 +549,22 @@ function App() {
         )}
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
+      <main className="mx-auto max-w-[1800px] px-4 py-10 sm:px-6">
         <ImportIssues issues={issues} onDismiss={dismissIssue} onDismissAll={dismissAllIssues} />
 
         {pages.length === 0 ? (
           <EmptyState onFiles={handleFiles} disabled={isImporting} />
         ) : (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_280px]">
-            <PageGrid
-              pages={pages}
-              selectedIds={selectedIds}
-              onReorder={handleReorder}
-              onRotate={handleRotate}
-              onRemove={handleRemove}
-              onDuplicate={handleDuplicate}
-              onToggleSelect={handleToggleSelect}
-              onPreview={(page) => setPreviewPageId(page.id)}
-            />
-            <PreviewPanel page={previewPage} onRotate={handleRotate} onRemove={handleRemove} onSaveAsImage={handleSaveAsImage} />
-          </div>
+          <PageGrid
+            pages={pages}
+            selectedIds={selectedIds}
+            onReorder={handleReorder}
+            onRotate={handleRotate}
+            onRemove={handleRemove}
+            onDuplicate={handleDuplicate}
+            onToggleSelect={handleToggleSelect}
+            onPreview={(page) => setLightboxPageId(page.id)}
+          />
         )}
 
         {isImporting && importProgress && (
@@ -629,6 +622,18 @@ function App() {
       )}
 
       {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
+
+      {lightboxPageId && (
+        <PageLightbox
+          pages={pages}
+          pageId={lightboxPageId}
+          onClose={() => setLightboxPageId(null)}
+          onNavigate={setLightboxPageId}
+          onRotate={handleRotate}
+          onRemove={handleRemove}
+          onSaveAsImage={handleSaveAsImage}
+        />
+      )}
 
       {undoSnapshot && (
         <UndoToast message={undoSnapshot.message} onUndo={handleUndo} onDismiss={() => setUndoSnapshot(null)} />
