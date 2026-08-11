@@ -35,7 +35,8 @@ export function SplitModal({ pages, sources, onClose, onError }: SplitModalProps
     try {
       await downloadSplitChunks(pages, sources, pagesPerFile, baseName.trim() || 'split')
       onClose()
-    } catch {
+    } catch (err) {
+      console.error(err)
       onError('Something went wrong while splitting your PDF. Please try again.')
     } finally {
       setIsExporting(false)

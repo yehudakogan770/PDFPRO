@@ -130,7 +130,8 @@ export function PrintLayoutModal({ pages, sources, selectedIds, onClose, onError
       const bytes = await build()
       downloadBytes(bytes, ensurePdfExtension(outputName))
       onClose()
-    } catch {
+    } catch (err) {
+      console.error(err)
       onError('Something went wrong while building the print layout. Please try again.')
     } finally {
       setIsBuilding(false)
@@ -144,7 +145,8 @@ export function PrintLayoutModal({ pages, sources, selectedIds, onClose, onError
       const bytes = await build()
       printBytes(bytes)
       onClose()
-    } catch {
+    } catch (err) {
+      console.error(err)
       onError('Something went wrong while preparing the print layout. Please try again.')
     } finally {
       setIsBuilding(false)

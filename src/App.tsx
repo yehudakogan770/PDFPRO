@@ -197,7 +197,8 @@ function App() {
         return next
       })
       setPages((prev) => [...prev, ...newPages])
-    } catch {
+    } catch (err) {
+      console.error(err)
       pushIssue('Something went wrong while adding a blank page.')
     }
   }, [pages, pushIssue])
@@ -287,7 +288,8 @@ function App() {
       try {
         const blob = await exportPageAsImage(page, sourcesRef.current)
         downloadBlob(blob, `page-${String(page.pageNumber).padStart(2, '0')}.png`)
-      } catch {
+      } catch (err) {
+        console.error(err)
         pushIssue('Something went wrong while saving this page as an image.')
       }
     },
@@ -366,7 +368,8 @@ function App() {
     try {
       const selected = pages.filter((p) => selectedIds.has(p.id))
       await downloadPagesAsImages(selected, sources, 'page')
-    } catch {
+    } catch (err) {
+      console.error(err)
       pushIssue('Something went wrong while saving pages as images.')
     } finally {
       setIsExportingImages(false)
@@ -380,7 +383,8 @@ function App() {
       const selected = pages.filter((p) => selectedIds.has(p.id))
       const bytes = await mergePages(selected, sources)
       downloadBytes(bytes, ensurePdfExtension(selected.length === 1 ? 'page.pdf' : 'extracted.pdf'))
-    } catch {
+    } catch (err) {
+      console.error(err)
       pushIssue('Something went wrong while extracting the selected pages.')
     } finally {
       setIsExtracting(false)
@@ -394,7 +398,8 @@ function App() {
       const selected = pages.filter((p) => selectedIds.has(p.id))
       const text = await extractPagesText(selected, sources)
       downloadText(text, 'extracted-text.txt')
-    } catch {
+    } catch (err) {
+      console.error(err)
       pushIssue('Something went wrong while extracting text from the selected pages.')
     } finally {
       setIsExtractingText(false)
@@ -505,7 +510,8 @@ function App() {
     try {
       const bytes = await mergePages(pages, sources)
       downloadBytes(bytes, ensurePdfExtension(outputName))
-    } catch {
+    } catch (err) {
+      console.error(err)
       pushIssue('Something went wrong while merging your PDFs. Please try again.')
     } finally {
       setIsMerging(false)

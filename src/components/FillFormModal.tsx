@@ -38,7 +38,8 @@ export function FillFormModal({ pages, sources, onClose, onApply, onError }: Fil
         try {
           const detected = await detectFormFields(source.bytes)
           if (detected.length > 0) options.push({ sourceId, sourceName: source.name, fieldCount: detected.length })
-        } catch {
+        } catch (err) {
+          console.error(err)
           // Not a form (or unreadable) -- just skip it, this isn't an error worth surfacing.
         }
       }
@@ -65,7 +66,8 @@ export function FillFormModal({ pages, sources, onClose, onApply, onError }: Fil
         if (cancelled) return
         setFields(detected)
         setValues(Object.fromEntries(detected.map((f) => [f.name, f.value])))
-      } catch {
+      } catch (err) {
+        console.error(err)
         if (!cancelled) onError('Something went wrong while reading this form.')
       } finally {
         if (!cancelled) setIsLoadingFields(false)
@@ -95,7 +97,8 @@ export function FillFormModal({ pages, sources, onClose, onApply, onError }: Fil
       const bytes = await fillAndFlattenForm(source.bytes, values)
       await onApply(selectedSourceId, bytes)
       onClose()
-    } catch {
+    } catch (err) {
+      console.error(err)
       onError('Something went wrong while filling this form. Please try again.')
     } finally {
       setIsSaving(false)

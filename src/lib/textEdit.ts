@@ -1,8 +1,22 @@
 import { getDocument, type PDFPageProxy } from 'pdfjs-dist'
-import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib'
+import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont } from 'pdf-lib'
+import unicodeFontUrl from '@fontsource/noto-sans-hebrew/files/noto-sans-hebrew-hebrew-400-normal.woff?url'
 import type { PageItem, SourceDoc } from '../types'
 import { renderPageThumbnail, toArrayBuffer, uid } from './pdf'
 import type { LoadedPdf } from './pdf'
+
+function isEncodable(font: PDFFont, text: string): boolean {
+  try {
+    font.encodeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Hebrew letters/points plus Hebrew presentation forms -- StandardFonts (WinAnsi)
+ * can't encode any of these, so text containing them needs the embedded Unicode font. */
+const NEEDS_UNICODE_FONT = /[֐-׿יִ-ﭏ]/
 
 export interface TextRect {
   x: number
@@ -171,11 +185,33 @@ export async function applyPageEdits(
     copiedPage.setRotation(degrees(currentAngle + pageItem.rotation))
   }
 
-  const font = await outDoc.embedFont(StandardFonts.Helvetica)
+  const latinFont = await outDoc.embedFont(StandardFonts.Helvetica)
+  let unicodeFont: PDFFont | null = null
+  const getUnicodeFont = async () => {
+    if (!unicodeFont) {
+      const { default: fontkit } = await import('@pdf-lib/fontkit')
+      outDoc.registerFontkit(fontkit)
+      const fontBytes = await fetch(unicodeFontUrl).then((res) => res.arrayBuffer())
+      unicodeFont = await outDoc.embedFont(fontBytes, { subset: true })
+    }
+    return unicodeFont
+  }
+
   for (const edit of edits) {
     if (edit.kind === 'image') {
       const image = edit.format === 'png' ? await outDoc.embedPng(edit.bytes) : await outDoc.embedJpg(edit.bytes)
       copiedPage.drawImage(image, { x: edit.x, y: edit.y, width: edit.width, height: edit.height })
+      continue
+    }
+
+    const hasText = edit.text.trim().length > 0
+    const font = hasText ? (NEEDS_UNICODE_FONT.test(edit.text) ? await getUnicodeFont() : latinFont) : null
+    // A run whose original text contains characters neither font can encode (e.g. a
+    // symbol/dingbat font's "text" layer) can't be faithfully redrawn -- skip that one
+    // edit rather than losing every other edit on the page to a single encoding error.
+    const canDraw = !hasText || isEncodable(font!, edit.text)
+    if (!canDraw) {
+      console.warn('Skipping a text edit with characters this app cannot render:', edit.text)
       continue
     }
 
@@ -188,7 +224,7 @@ export async function applyPageEdits(
         color: rgb(1, 1, 1),
       })
     }
-    if (edit.text.trim().length > 0) {
+    if (hasText && font) {
       copiedPage.drawText(edit.text, {
         x: edit.x,
         y: edit.y,

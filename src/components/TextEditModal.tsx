@@ -99,7 +99,8 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
         setCanvasUrl(canvas.toDataURL('image/png'))
         setCanvasSize({ width: viewport.width, height: viewport.height })
         setRuns(detected)
-      } catch {
+      } catch (err) {
+        console.error(err)
         if (!cancelled) {
           onError('Something went wrong while opening this page for editing.')
           onClose()
@@ -204,7 +205,8 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
       setPendingImage(loaded)
       setAddMode('image')
       setActiveId(null)
-    } catch {
+    } catch (err) {
+      console.error(err)
       onError('Could not read that image file.')
     }
   }
@@ -267,7 +269,8 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
       const result = await applyPageEdits(page, sources, activeEdits)
       await onApply(page.id, result)
       onClose()
-    } catch {
+    } catch (err) {
+      console.error(err)
       onError('Something went wrong while saving your edits. Please try again.')
     } finally {
       setIsSaving(false)

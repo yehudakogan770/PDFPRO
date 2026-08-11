@@ -59,7 +59,8 @@ export function CompressModal({ pages, sources, selectedIds, onClose, onError }:
       const bytes = await buildCompressedPdf(effectivePages, sources, level)
       downloadBytes(bytes, ensurePdfExtension(outputName))
       setResult({ before: approxOriginalSize, after: bytes.byteLength })
-    } catch {
+    } catch (err) {
+      console.error(err)
       onError('Something went wrong while compressing your PDF. Please try again.')
     } finally {
       setIsCompressing(false)

@@ -46,6 +46,8 @@ single byte ever leaving your device.
   page (covered and redrawn, not securely removed from the underlying file)
 - "Add image" drops a PNG/JPG onto the page at the point you click, with a
   +/- stepper to resize it (aspect ratio locked)
+- Hebrew text is fully supported (editing existing Hebrew lines and typing
+  new ones), alongside the default Latin-script font
 - Gracefully detects pages with no text layer (e.g. scanned images) and
   still lets you add new text or an image on top
 

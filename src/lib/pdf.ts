@@ -104,7 +104,8 @@ export async function loadPdfFile(file: File, password?: string): Promise<Loaded
     let rendered: { url: string; width: number; height: number }
     try {
       rendered = await renderPageThumbnail(page, dpr)
-    } catch {
+    } catch (err) {
+      console.error(err)
       throw new PdfLoadError(file.name, 'Canvas rendering is not supported in this browser.')
     }
 

@@ -46,7 +46,8 @@ export function CropModal({ page, sources, onClose, onApply, onError }: CropModa
       const result = await applyCrop(page, sources, cropInsets)
       await onApply(page.id, result)
       onClose()
-    } catch {
+    } catch (err) {
+      console.error(err)
       onError('Something went wrong while cropping this page. Please try again.')
     } finally {
       setIsSaving(false)
