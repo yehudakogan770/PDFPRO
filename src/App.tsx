@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import type { PageItem, SourceDoc } from './types'
+import { getDocument } from 'pdfjs-dist'
 import {
   PdfLoadError,
+  PdfPasswordRequiredError,
   createBlankPage,
   downloadBlob,
   downloadBytes,
   downloadPagesAsImages,
+  downloadText,
   ensurePdfExtension,
   exportPageAsImage,
+  extractPagesText,
   isImageFile,
   loadImageFile,
   loadPdfFile,
   mergePages,
+  renderPageThumbnail,
+  toArrayBuffer,
   uid,
 } from './lib/pdf'
 import type { LoadedPdf } from './lib/pdf'
@@ -27,13 +33,18 @@ import { CompressModal } from './components/CompressModal'
 import { ShortcutsHelp } from './components/ShortcutsHelp'
 import { PageLightbox } from './components/PageLightbox'
 import { TextEditModal } from './components/TextEditModal'
+import { CropModal } from './components/CropModal'
+import { FillFormModal } from './components/FillFormModal'
+import { PasswordPromptModal } from './components/PasswordPromptModal'
 import { UndoToast } from './components/UndoToast'
 import {
+  IconClipboardList,
   IconCopy,
   IconDownload,
   IconFileOutput,
   IconFilePlus,
   IconFileText,
+  IconFileTxt,
   IconHelpCircle,
   IconImage,
   IconMinimize,
@@ -66,6 +77,13 @@ function App() {
   const [splitModalOpen, setSplitModalOpen] = useState(false)
   const [lightboxPageId, setLightboxPageId] = useState<string | null>(null)
   const [textEditPageId, setTextEditPageId] = useState<string | null>(null)
+  const [cropPageId, setCropPageId] = useState<string | null>(null)
+  const [fillFormModalOpen, setFillFormModalOpen] = useState(false)
+  const [passwordQueue, setPasswordQueue] = useState<File[]>([])
+  const [passwordChecking, setPasswordChecking] = useState(false)
+  const [passwordWrong, setPasswordWrong] = useState(false)
+  const [rangeInput, setRangeInput] = useState('')
+  const [isExtractingText, setIsExtractingText] = useState(false)
   const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot | null>(null)
   const [windowDragActive, setWindowDragActive] = useState(false)
   const [isExportingImages, setIsExportingImages] = useState(false)
@@ -141,6 +159,10 @@ function App() {
           })
           setPages((prev) => [...prev, ...newPages])
         } catch (err) {
+          if (err instanceof PdfPasswordRequiredError) {
+            setPasswordQueue((prev) => [...prev, file])
+            continue
+          }
           if (!(err instanceof PdfLoadError)) console.error(err)
           const message = err instanceof PdfLoadError ? err.message : `${file.name}: could not be imported.`
           pushIssue(message)
@@ -272,9 +294,11 @@ function App() {
     [pushIssue],
   )
 
-  const handleApplyTextEdits = useCallback(
-    async (pageId: string, loaded: LoadedPdf) => {
-      pushUndoSnapshot('Text edited')
+  // Shared by the text editor and crop tool: both replace one page's content
+  // with a freshly baked single-page source, keyed by the same PageItem id.
+  const handleReplacePageContent = useCallback(
+    async (pageId: string, loaded: LoadedPdf, undoMessage: string) => {
+      pushUndoSnapshot(undoMessage)
       const newSource = loaded.source
       const newPage = loaded.pages[0]
       setSources((prev) => {
@@ -301,11 +325,22 @@ function App() {
     [pushUndoSnapshot],
   )
 
+  const handleApplyTextEdits = useCallback(
+    (pageId: string, loaded: LoadedPdf) => handleReplacePageContent(pageId, loaded, 'Text edited'),
+    [handleReplacePageContent],
+  )
+
+  const handleApplyCrop = useCallback(
+    (pageId: string, loaded: LoadedPdf) => handleReplacePageContent(pageId, loaded, 'Page cropped'),
+    [handleReplacePageContent],
+  )
+
+  // The lightbox and any full-screen sub-tool (text editor, crop) each have
+  // their own "Escape closes me" listener; keeping both mounted at once means
+  // a single Escape (e.g. to dismiss an in-progress text box) closes both.
+  // Close the lightbox while the sub-tool is open and reopen it (on the same
+  // page) once it's done.
   const handleEditTextFromLightbox = useCallback((id: string) => {
-    // The lightbox and the text editor are both full-screen modals with their
-    // own "Escape closes me" listener; keeping both mounted at once means a
-    // single Escape (e.g. to dismiss an in-progress text box) closes both.
-    // Close the lightbox while editing and reopen it on the same page after.
     setLightboxPageId(null)
     setTextEditPageId(id)
   }, [])
@@ -314,6 +349,16 @@ function App() {
     if (textEditPageId !== null) setLightboxPageId(textEditPageId)
     setTextEditPageId(null)
   }, [textEditPageId])
+
+  const handleCropFromLightbox = useCallback((id: string) => {
+    setLightboxPageId(null)
+    setCropPageId(id)
+  }, [])
+
+  const handleCloseCropModal = useCallback(() => {
+    if (cropPageId !== null) setLightboxPageId(cropPageId)
+    setCropPageId(null)
+  }, [cropPageId])
 
   const handleBulkSaveAsImages = useCallback(async () => {
     if (selectedIds.size === 0 || isExportingImages) return
@@ -341,6 +386,118 @@ function App() {
       setIsExtracting(false)
     }
   }, [pages, sources, selectedIds, isExtracting, pushIssue])
+
+  const handleExtractText = useCallback(async () => {
+    if (selectedIds.size === 0 || isExtractingText) return
+    setIsExtractingText(true)
+    try {
+      const selected = pages.filter((p) => selectedIds.has(p.id))
+      const text = await extractPagesText(selected, sources)
+      downloadText(text, 'extracted-text.txt')
+    } catch {
+      pushIssue('Something went wrong while extracting text from the selected pages.')
+    } finally {
+      setIsExtractingText(false)
+    }
+  }, [pages, sources, selectedIds, isExtractingText, pushIssue])
+
+  const parsePageRange = useCallback((input: string, total: number): number[] => {
+    const indices = new Set<number>()
+    for (const part of input.split(',')) {
+      const trimmed = part.trim()
+      if (!trimmed) continue
+      const rangeMatch = trimmed.match(/^(\d+)\s*-\s*(\d+)$/)
+      if (rangeMatch) {
+        let start = parseInt(rangeMatch[1], 10)
+        let end = parseInt(rangeMatch[2], 10)
+        if (start > end) [start, end] = [end, start]
+        for (let i = start; i <= end; i++) if (i >= 1 && i <= total) indices.add(i - 1)
+      } else if (/^\d+$/.test(trimmed)) {
+        const n = parseInt(trimmed, 10)
+        if (n >= 1 && n <= total) indices.add(n - 1)
+      }
+    }
+    return [...indices].sort((a, b) => a - b)
+  }, [])
+
+  const handleSelectRange = useCallback(() => {
+    const indices = parsePageRange(rangeInput, pages.length)
+    if (indices.length === 0) {
+      pushIssue('No valid pages matched that range, e.g. try "1-3,5,8".')
+      return
+    }
+    setSelectedIds(new Set(indices.map((i) => pages[i].id)))
+  }, [rangeInput, pages, parsePageRange, pushIssue])
+
+  const handleApplyFormFill = useCallback(
+    async (sourceId: string, newBytes: Uint8Array) => {
+      pushUndoSnapshot('Form filled')
+      const affectedIndices = new Set(pagesRef.current.filter((p) => p.sourceId === sourceId).map((p) => p.pageIndex))
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      const thumbByIndex = new Map<number, { url: string; width: number; height: number }>()
+
+      const pdf = await getDocument({ data: newBytes.slice() }).promise
+      try {
+        for (const idx of affectedIndices) {
+          const page = await pdf.getPage(idx + 1)
+          thumbByIndex.set(idx, await renderPageThumbnail(page, dpr))
+        }
+      } finally {
+        await pdf.loadingTask.destroy()
+      }
+
+      const newBuffer = toArrayBuffer(newBytes)
+      setSources((prev) => {
+        const next = new Map(prev)
+        const existing = next.get(sourceId)
+        if (existing) next.set(sourceId, { ...existing, bytes: newBuffer })
+        return next
+      })
+      setPages((prev) =>
+        prev.map((p) => {
+          if (p.sourceId !== sourceId) return p
+          const thumb = thumbByIndex.get(p.pageIndex)
+          return thumb ? { ...p, thumbnailUrl: thumb.url, width: thumb.width, height: thumb.height } : p
+        }),
+      )
+    },
+    [pushUndoSnapshot],
+  )
+
+  const handleUnlockSubmit = useCallback(
+    async (password: string) => {
+      const file = passwordQueue[0]
+      if (!file || passwordChecking) return
+      setPasswordChecking(true)
+      try {
+        const { source, pages: newPages } = await loadPdfFile(file, password)
+        setSources((prev) => {
+          const next = new Map(prev)
+          next.set(source.id, source)
+          return next
+        })
+        setPages((prev) => [...prev, ...newPages])
+        setPasswordQueue((prev) => prev.slice(1))
+        setPasswordWrong(false)
+      } catch (err) {
+        if (err instanceof PdfPasswordRequiredError && err.wrongPassword) {
+          setPasswordWrong(true)
+        } else {
+          pushIssue(`${file.name}: could not be imported.`)
+          setPasswordQueue((prev) => prev.slice(1))
+          setPasswordWrong(false)
+        }
+      } finally {
+        setPasswordChecking(false)
+      }
+    },
+    [passwordQueue, passwordChecking, pushIssue],
+  )
+
+  const handleSkipPasswordFile = useCallback(() => {
+    setPasswordQueue((prev) => prev.slice(1))
+    setPasswordWrong(false)
+  }, [])
 
   const handleMerge = useCallback(async () => {
     if (pages.length === 0 || isMerging) return
@@ -458,6 +615,16 @@ function App() {
             {pages.length > 0 && (
               <button
                 type="button"
+                onClick={() => setFillFormModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <IconClipboardList className="size-4" />
+                Fill Form
+              </button>
+            )}
+            {pages.length > 0 && (
+              <button
+                type="button"
                 onClick={() => setCompressModalOpen(true)}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
@@ -538,6 +705,15 @@ function App() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => void handleExtractText()}
+                      disabled={isExtractingText}
+                      className={toolbarButtonClass}
+                    >
+                      {isExtractingText ? <IconSpinner className="size-3.5" /> : <IconFileTxt className="size-3.5" />}
+                      Extract text
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleBulkRemove}
                       className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
                     >
@@ -557,6 +733,21 @@ function App() {
                     <button type="button" onClick={handleSelectAll} className={toolbarButtonClass}>
                       Select all
                     </button>
+                    <label className="hidden items-center gap-1.5 text-sm text-slate-500 md:flex">
+                      <input
+                        type="text"
+                        value={rangeInput}
+                        onChange={(e) => setRangeInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSelectRange()
+                        }}
+                        placeholder="e.g. 1-3,5"
+                        className="w-24 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                      />
+                      <button type="button" onClick={handleSelectRange} className={toolbarButtonClass}>
+                        Select range
+                      </button>
+                    </label>
                     {divider}
                     <label className="hidden items-center gap-1.5 pl-1 text-sm text-slate-500 sm:flex">
                       Save as
@@ -667,6 +858,16 @@ function App() {
         />
       )}
 
+      {fillFormModalOpen && (
+        <FillFormModal
+          pages={pages}
+          sources={sources}
+          onClose={() => setFillFormModalOpen(false)}
+          onApply={handleApplyFormFill}
+          onError={pushIssue}
+        />
+      )}
+
       {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
 
       {lightboxPageId && (
@@ -679,6 +880,7 @@ function App() {
           onRemove={handleRemove}
           onSaveAsImage={handleSaveAsImage}
           onEditText={handleEditTextFromLightbox}
+          onCrop={handleCropFromLightbox}
         />
       )}
 
@@ -696,6 +898,32 @@ function App() {
             />
           )
         })()}
+
+      {cropPageId &&
+        (() => {
+          const cropPage = pages.find((p) => p.id === cropPageId)
+          if (!cropPage) return null
+          return (
+            <CropModal
+              page={cropPage}
+              sources={sources}
+              onClose={handleCloseCropModal}
+              onApply={handleApplyCrop}
+              onError={pushIssue}
+            />
+          )
+        })()}
+
+      {passwordQueue.length > 0 && (
+        <PasswordPromptModal
+          fileName={passwordQueue[0].name}
+          wrongPassword={passwordWrong}
+          isChecking={passwordChecking}
+          remaining={passwordQueue.length - 1}
+          onSubmit={(password) => void handleUnlockSubmit(password)}
+          onSkip={handleSkipPasswordFile}
+        />
+      )}
 
       {undoSnapshot && (
         <UndoToast message={undoSnapshot.message} onUndo={handleUndo} onDismiss={() => setUndoSnapshot(null)} />

@@ -15,6 +15,8 @@ single byte ever leaving your device.
 - Drag and drop PDFs, JPGs, or PNGs anywhere on the page, or click to browse
 - Import any number of files at once, with per-file progress and per-file
   error reporting that doesn't block the rest of the batch
+- Password-protected PDFs prompt for a password inline (with a clear
+  incorrect-password message) instead of just failing to import
 - Images are automatically placed on their own page, scaled to a sensible size
 - Add blank pages, then drag them wherever you need extra space
 
@@ -25,13 +27,14 @@ single byte ever leaving your device.
   and full keyboard support)
 - Rotate (clockwise or counter-clockwise), duplicate, or remove individual
   pages
-- Multi-select pages (click, Ctrl/Cmd+A, or Escape to clear) for bulk rotate,
-  duplicate, remove, "save as image," or "extract as PDF"
+- Multi-select pages (click, Ctrl/Cmd+A, Escape to clear, or type a page
+  range like `1-3,5` and hit "Select range") for bulk rotate, duplicate,
+  remove, "save as image," "extract as PDF," or "extract text"
 - Reverse the entire page order in one click
 - Undo the last destructive change (remove / bulk remove / clear all / text
   edit) from a toast notification, or with Ctrl/Cmd+Z
 - Click any page to open a full-size lightbox with prev/next paging through
-  the whole document, plus rotate/edit-text/save-as-image/remove
+  the whole document, plus rotate/edit-text/crop/save-as-image/remove
 - Full keyboard shortcuts (press `?` for the full list): Ctrl/Cmd+Z undo,
   Ctrl/Cmd+A select all, Escape to deselect, Delete/Backspace to remove the
   current selection
@@ -43,6 +46,18 @@ single byte ever leaving your device.
   page (covered and redrawn, not securely removed from the underlying file)
 - Gracefully detects pages with no text layer (e.g. scanned images) and
   still lets you add new text on top
+
+### Crop
+- Trim any page's visible margins from the lightbox, with a live preview
+  of exactly what will be kept
+- Non-destructive in the PDF sense (sets the page's CropBox), correctly
+  accounts for the page's current rotation
+
+### Fill Form
+- Detects real AcroForm fields (text, checkboxes, dropdowns, radio groups,
+  list boxes) in any loaded PDF and lists them with their current values
+- Fill them in and flatten the form -- the values become permanent page
+  content instead of editable fields
 
 ### Print Layout Studio
 - **Normal** — no layout changes, just stamps/metadata
@@ -70,7 +85,8 @@ single byte ever leaving your device.
 ### Split & export
 - Split the current page set into one-PDF-per-page, or fixed-size chunks
   every N pages, each downloaded with a custom filename prefix
-- Extract just the selected pages as their own PDF
+- Extract just the selected pages as their own PDF, or as a plain .txt file
+  of their text content
 - Export any page — or a whole multi-selection — as a high-resolution PNG
 - Merge everything into a single PDF with a custom filename
 

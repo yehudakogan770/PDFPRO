@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PageItem } from '../types'
-import { IconChevronLeft, IconChevronRight, IconEdit, IconImage, IconRotate, IconRotateCcw, IconSpinner, IconTrash, IconX } from './Icons'
+import { IconChevronLeft, IconChevronRight, IconCrop, IconEdit, IconImage, IconRotate, IconRotateCcw, IconSpinner, IconTrash, IconX } from './Icons'
 
 interface PageLightboxProps {
   pages: PageItem[]
@@ -11,9 +11,10 @@ interface PageLightboxProps {
   onRemove: (id: string) => void
   onSaveAsImage: (id: string) => Promise<void>
   onEditText: (id: string) => void
+  onCrop: (id: string) => void
 }
 
-export function PageLightbox({ pages, pageId, onClose, onNavigate, onRotate, onRemove, onSaveAsImage, onEditText }: PageLightboxProps) {
+export function PageLightbox({ pages, pageId, onClose, onNavigate, onRotate, onRemove, onSaveAsImage, onEditText, onCrop }: PageLightboxProps) {
   const [isSaving, setIsSaving] = useState(false)
   const lastIndexRef = useRef(0)
   const currentIndex = pages.findIndex((p) => p.id === pageId)
@@ -160,6 +161,14 @@ export function PageLightbox({ pages, pageId, onClose, onNavigate, onRotate, onR
         >
           <IconEdit className="size-4" />
           Edit text
+        </button>
+        <button
+          type="button"
+          onClick={() => onCrop(page.id)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white hover:bg-white/20"
+        >
+          <IconCrop className="size-4" />
+          Crop
         </button>
         <button
           type="button"

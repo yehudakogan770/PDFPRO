@@ -1,4 +1,4 @@
-import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy, type PDFPageProxy } from 'pdfjs-dist'
+import { GlobalWorkerOptions, PasswordResponses, getDocument, type PDFDocumentProxy, type PDFPageProxy } from 'pdfjs-dist'
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import { PDFDocument, PageSizes, degrees } from 'pdf-lib'
 import type { PageItem, SourceDoc } from '../types'
@@ -52,6 +52,20 @@ export class PdfLoadError extends Error {
   }
 }
 
+/** Thrown when a PDF needs a password to open. `wrongPassword` is true when a
+ * password was already tried and rejected (vs. never having been asked yet). */
+export class PdfPasswordRequiredError extends Error {
+  file: File
+  wrongPassword: boolean
+
+  constructor(file: File, wrongPassword: boolean) {
+    super(wrongPassword ? 'Incorrect password.' : 'This PDF is password-protected.')
+    this.name = 'PdfPasswordRequiredError'
+    this.file = file
+    this.wrongPassword = wrongPassword
+  }
+}
+
 export interface LoadedPdf {
   source: SourceDoc
   pages: PageItem[]
@@ -59,19 +73,21 @@ export interface LoadedPdf {
 
 /** Reads a File, renders a thumbnail for every page, and keeps a pristine byte
  * copy for later merging. The copy passed to pdf.js is a separate slice so the
- * original bytes are never at risk of being transferred/detached by the worker. */
-export async function loadPdfFile(file: File): Promise<LoadedPdf> {
+ * original bytes are never at risk of being transferred/detached by the worker.
+ * If the PDF is password-protected and no (or the wrong) password is given,
+ * throws PdfPasswordRequiredError so the caller can prompt and retry. */
+export async function loadPdfFile(file: File, password?: string): Promise<LoadedPdf> {
   const pristineBytes = await file.arrayBuffer()
 
   let pdf: PDFDocumentProxy
   try {
-    pdf = await getDocument({ data: pristineBytes.slice(0) }).promise
+    pdf = await getDocument({ data: pristineBytes.slice(0), password }).promise
   } catch (err) {
-    const message =
-      err instanceof Error && err.name === 'PasswordException'
-        ? 'This PDF is password-protected and cannot be imported.'
-        : 'This file could not be read as a PDF.'
-    throw new PdfLoadError(file.name, message)
+    if (err instanceof Error && err.name === 'PasswordException') {
+      const code = (err as Error & { code?: number }).code
+      throw new PdfPasswordRequiredError(file, code === PasswordResponses.INCORRECT_PASSWORD)
+    }
+    throw new PdfLoadError(file.name, 'This file could not be read as a PDF.')
   }
 
   if (pdf.numPages === 0) {
@@ -385,4 +401,44 @@ export async function downloadPagesAsImages(pages: PageItem[], sources: Map<stri
     downloadBlob(blob, `${baseName}${label}.png`)
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
+}
+
+export function downloadText(text: string, filename: string): void {
+  downloadBlob(new Blob([text], { type: 'text/plain' }), filename)
+}
+
+/** Best-effort plain-text extraction (pdf.js's text layer, not OCR -- pages
+ * that are scanned images with no text layer will extract as empty). */
+export async function extractPagesText(pages: PageItem[], sources: Map<string, SourceDoc>): Promise<string> {
+  const pdfCache = new Map<string, PDFDocumentProxy>()
+  const sections: string[] = []
+
+  try {
+    for (let i = 0; i < pages.length; i++) {
+      const pageItem = pages[i]
+      const source = sources.get(pageItem.sourceId)
+      if (!source) continue
+
+      let pdf = pdfCache.get(pageItem.sourceId)
+      if (!pdf) {
+        pdf = await getDocument({ data: source.bytes.slice(0) }).promise
+        pdfCache.set(pageItem.sourceId, pdf)
+      }
+
+      const page = await pdf.getPage(pageItem.pageIndex + 1)
+      const content = await page.getTextContent()
+      let text = ''
+      for (const item of content.items) {
+        if (!('str' in item)) continue
+        text += item.str + (item.hasEOL ? '\n' : ' ')
+      }
+      page.cleanup()
+
+      sections.push(`--- Page ${i + 1} (${pageItem.sourceName} p${pageItem.pageNumber}) ---\n${text.trim()}`)
+    }
+  } finally {
+    for (const pdf of pdfCache.values()) await pdf.loadingTask.destroy()
+  }
+
+  return sections.join('\n\n')
 }
