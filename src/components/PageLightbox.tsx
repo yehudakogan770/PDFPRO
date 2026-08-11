@@ -160,7 +160,7 @@ export function PageLightbox({ pages, pageId, onClose, onNavigate, onRotate, onR
           className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white hover:bg-white/20"
         >
           <IconEdit className="size-4" />
-          Edit text
+          Edit page
         </button>
         <button
           type="button"

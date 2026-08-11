@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import type { MouseEvent as ReactMouseEvent } from 'react'
+import type { ChangeEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { getDocument } from 'pdfjs-dist'
 import type { PageItem, SourceDoc } from '../types'
-import { applyTextEdits, detectTextRuns, rawPointToScreen, screenPointToRaw } from '../lib/textEdit'
-import type { DetectedTextRun, TextEdit } from '../lib/textEdit'
+import { applyPageEdits, detectTextRuns, rawPointToScreen, screenPointToRaw } from '../lib/textEdit'
+import type { DetectedTextRun, ImageEdit, PageEdit, TextEdit } from '../lib/textEdit'
 import type { LoadedPdf } from '../lib/pdf'
 import { uid } from '../lib/pdf'
-import { IconMinus, IconPlus, IconSpinner, IconTrash } from './Icons'
+import { IconImage, IconMinus, IconPlus, IconSpinner, IconTrash } from './Icons'
 
 interface TextEditModalProps {
   page: PageItem
@@ -16,8 +16,16 @@ interface TextEditModalProps {
   onError: (message: string) => void
 }
 
+interface PendingImage {
+  bytes: ArrayBuffer
+  format: 'png' | 'jpg'
+  previewUrl: string
+  aspectRatio: number
+}
+
 const EDITOR_LONG_EDGE = 1400
 const NEW_TEXT_FONT_SIZE = 14
+const DEFAULT_IMAGE_WIDTH = 150
 
 const COLOR_SWATCHES: { label: string; value: { r: number; g: number; b: number } }[] = [
   { label: 'Black', value: { r: 0, g: 0, b: 0 } },
@@ -26,20 +34,35 @@ const COLOR_SWATCHES: { label: string; value: { r: number; g: number; b: number 
   { label: 'Green', value: { r: 0.06, g: 0.5, b: 0.24 } },
 ]
 
+async function loadImageForPlacement(file: File): Promise<PendingImage> {
+  const bytes = await file.arrayBuffer()
+  const format: 'png' | 'jpg' = file.type === 'image/png' || /\.png$/i.test(file.name) ? 'png' : 'jpg'
+  const previewUrl = URL.createObjectURL(new Blob([bytes], { type: file.type }))
+  const dims = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const img = new window.Image()
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
+    img.onerror = () => reject(new Error('Could not read this image.'))
+    img.src = previewUrl
+  })
+  return { bytes, format, previewUrl, aspectRatio: dims.width / dims.height }
+}
+
 export function TextEditModal({ page, sources, onClose, onApply, onError }: TextEditModalProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [canvasUrl, setCanvasUrl] = useState<string | null>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const [runs, setRuns] = useState<DetectedTextRun[]>([])
-  const [edits, setEdits] = useState<Map<string, TextEdit>>(new Map())
+  const [edits, setEdits] = useState<Map<string, PageEdit>>(new Map())
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [addMode, setAddMode] = useState(false)
+  const [addMode, setAddMode] = useState<'text' | 'image' | null>(null)
+  const [pendingImage, setPendingImage] = useState<PendingImage | null>(null)
   const [displayScale, setDisplayScale] = useState(1)
 
   const [viewportTransform, setViewportTransform] = useState<number[] | null>(null)
   const [pxPerPoint, setPxPerPoint] = useState(1)
   const imgRef = useRef<HTMLImageElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -120,7 +143,8 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
       const next = new Map(prev)
       next.set(run.id, {
         id: run.id,
-        kind: 'replace',
+        kind: 'text',
+        mode: 'replace',
         x: run.baseline.x,
         y: run.baseline.y,
         text: run.str,
@@ -133,11 +157,22 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
     setActiveId(run.id)
   }
 
-  const updateActiveEdit = (patch: Partial<TextEdit>) => {
+  const updateActiveTextEdit = (patch: Partial<Pick<TextEdit, 'text' | 'fontSize' | 'color'>>) => {
     if (!activeId) return
     setEdits((prev) => {
       const existing = prev.get(activeId)
-      if (!existing) return prev
+      if (!existing || existing.kind !== 'text') return prev
+      const next = new Map(prev)
+      next.set(activeId, { ...existing, ...patch })
+      return next
+    })
+  }
+
+  const updateActiveImageEdit = (patch: Partial<Pick<ImageEdit, 'width' | 'height'>>) => {
+    if (!activeId) return
+    setEdits((prev) => {
+      const existing = prev.get(activeId)
+      if (!existing || existing.kind !== 'image') return prev
       const next = new Map(prev)
       next.set(activeId, { ...existing, ...patch })
       return next
@@ -147,16 +182,31 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
   const deleteActiveEdit = () => {
     if (!activeId) return
     const edit = edits.get(activeId)
-    if (edit?.kind === 'add') {
+    const shouldRemove = edit?.kind === 'image' || (edit?.kind === 'text' && edit.mode === 'add')
+    if (shouldRemove) {
       setEdits((prev) => {
         const next = new Map(prev)
         next.delete(activeId)
         return next
       })
     } else {
-      updateActiveEdit({ text: '' })
+      updateActiveTextEdit({ text: '' })
     }
     setActiveId(null)
+  }
+
+  const handleImageFileChosen = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      const loaded = await loadImageForPlacement(file)
+      setPendingImage(loaded)
+      setAddMode('image')
+      setActiveId(null)
+    } catch {
+      onError('Could not read that image file.')
+    }
   }
 
   const handleCanvasClick = (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -165,62 +215,107 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
     const canvasX = (e.clientX - bounds.left) / displayScale
     const canvasY = (e.clientY - bounds.top) / displayScale
     const raw = screenPointToRaw(viewportTransform, canvasX, canvasY)
-    const id = uid()
-    const newEdit: TextEdit = {
-      id,
-      kind: 'add',
-      x: raw.x,
-      y: raw.y - NEW_TEXT_FONT_SIZE * 0.8,
-      text: '',
-      fontSize: NEW_TEXT_FONT_SIZE,
-      color: COLOR_SWATCHES[0].value,
+
+    if (addMode === 'text') {
+      const id = uid()
+      const newEdit: TextEdit = {
+        id,
+        kind: 'text',
+        mode: 'add',
+        x: raw.x,
+        y: raw.y - NEW_TEXT_FONT_SIZE * 0.8,
+        text: '',
+        fontSize: NEW_TEXT_FONT_SIZE,
+        color: COLOR_SWATCHES[0].value,
+      }
+      setEdits((prev) => new Map(prev).set(id, newEdit))
+      setActiveId(id)
+      setAddMode(null)
+      return
     }
-    setEdits((prev) => new Map(prev).set(id, newEdit))
-    setActiveId(id)
-    setAddMode(false)
+
+    if (addMode === 'image' && pendingImage) {
+      const id = uid()
+      const width = DEFAULT_IMAGE_WIDTH
+      const height = width / pendingImage.aspectRatio
+      const newEdit: ImageEdit = {
+        id,
+        kind: 'image',
+        x: raw.x,
+        y: raw.y - height,
+        width,
+        height,
+        aspectRatio: pendingImage.aspectRatio,
+        format: pendingImage.format,
+        bytes: pendingImage.bytes,
+        previewUrl: pendingImage.previewUrl,
+      }
+      setEdits((prev) => new Map(prev).set(id, newEdit))
+      setActiveId(id)
+      setAddMode(null)
+      setPendingImage(null)
+    }
   }
 
   const handleSave = async () => {
     if (isSaving) return
     setIsSaving(true)
     try {
-      const activeEdits = [...edits.values()].filter((edit) => edit.kind === 'add' ? edit.text.trim().length > 0 : true)
-      const result = await applyTextEdits(page, sources, activeEdits)
+      const activeEdits = [...edits.values()].filter((edit) =>
+        edit.kind === 'image' ? true : edit.mode === 'add' ? edit.text.trim().length > 0 : true,
+      )
+      const result = await applyPageEdits(page, sources, activeEdits)
       await onApply(page.id, result)
       onClose()
     } catch {
-      onError('Something went wrong while saving your text edits. Please try again.')
+      onError('Something went wrong while saving your edits. Please try again.')
     } finally {
       setIsSaving(false)
     }
   }
 
-  const hasChanges = [...edits.values()].some((edit) => (edit.kind === 'add' ? edit.text.trim().length > 0 : true))
-  const activeEdit = activeId ? edits.get(activeId) : null
-  const addTextEdits = [...edits.values()].filter((edit) => edit.kind === 'add')
+  const hasChanges = [...edits.values()].some((edit) =>
+    edit.kind === 'image' ? true : edit.mode === 'add' ? edit.text.trim().length > 0 : true,
+  )
+  const activeEdit = activeId ? (edits.get(activeId) ?? null) : null
+  const addTextEdits = [...edits.values()].filter((edit): edit is TextEdit => edit.kind === 'text' && edit.mode === 'add')
+  const imageEdits = [...edits.values()].filter((edit): edit is ImageEdit => edit.kind === 'image')
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/90 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Edit text">
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/90 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Edit page">
+      <input ref={imageInputRef} type="file" accept="image/png,image/jpeg" onChange={(e) => void handleImageFileChosen(e)} className="hidden" />
+
       <div className="flex flex-wrap items-center gap-3 border-b border-white/10 px-4 py-3 text-white sm:px-6">
-        <p className="text-sm font-semibold">Edit text</p>
+        <p className="text-sm font-semibold">Edit page</p>
         <p className="hidden text-xs text-white/60 sm:block">
           {runs.length === 0 && !isLoading
-            ? 'No editable text was detected on this page (it may be a scanned image) — you can still add new text.'
-            : 'Click any text to edit it, or add new text anywhere. Edited text is covered and redrawn, not securely removed from the file.'}
+            ? 'No editable text was detected on this page (it may be a scanned image) — you can still add text or an image.'
+            : 'Click any text to edit it, or add new text/an image anywhere. Edited text is covered and redrawn, not securely removed from the file.'}
         </p>
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
             onClick={() => {
-              setAddMode((prev) => !prev)
+              setAddMode((prev) => (prev === 'text' ? null : 'text'))
+              setPendingImage(null)
               setActiveId(null)
             }}
             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              addMode ? 'bg-indigo-500 text-white' : 'bg-white/10 text-white hover:bg-white/20'
+              addMode === 'text' ? 'bg-indigo-500 text-white' : 'bg-white/10 text-white hover:bg-white/20'
             }`}
           >
             <IconPlus className="size-4" />
             Add text
+          </button>
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              addMode === 'image' ? 'bg-indigo-500 text-white' : 'bg-white/10 text-white hover:bg-white/20'
+            }`}
+          >
+            <IconImage className="size-4" />
+            Add image
           </button>
           <button
             type="button"
@@ -241,51 +336,87 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
         </div>
       </div>
 
+      {addMode === 'image' && pendingImage && (
+        <div className="border-b border-white/10 bg-indigo-500/20 px-4 py-2 text-center text-xs text-white sm:px-6">
+          Click anywhere on the page to place your image.
+        </div>
+      )}
+
       {activeEdit && (
         <div className="flex flex-wrap items-center gap-3 border-b border-white/10 bg-slate-800/80 px-4 py-2 text-white sm:px-6">
-          <span className="text-xs text-white/60">Selected text</span>
-          <label className="flex items-center gap-1.5 text-xs">
-            Size
-            <button
-              type="button"
-              onClick={() => updateActiveEdit({ fontSize: Math.max(4, activeEdit.fontSize - 1) })}
-              className="rounded bg-white/10 p-1 hover:bg-white/20"
-            >
-              <IconMinus className="size-3" />
-            </button>
-            <span className="w-6 text-center tabular-nums">{Math.round(activeEdit.fontSize)}</span>
-            <button
-              type="button"
-              onClick={() => updateActiveEdit({ fontSize: Math.min(200, activeEdit.fontSize + 1) })}
-              className="rounded bg-white/10 p-1 hover:bg-white/20"
-            >
-              <IconPlus className="size-3" />
-            </button>
-          </label>
-          <div className="flex items-center gap-1.5">
-            {COLOR_SWATCHES.map((swatch) => (
+          <span className="text-xs text-white/60">{activeEdit.kind === 'image' ? 'Selected image' : 'Selected text'}</span>
+
+          {activeEdit.kind === 'text' ? (
+            <>
+              <label className="flex items-center gap-1.5 text-xs">
+                Size
+                <button
+                  type="button"
+                  onClick={() => updateActiveTextEdit({ fontSize: Math.max(4, activeEdit.fontSize - 1) })}
+                  className="rounded bg-white/10 p-1 hover:bg-white/20"
+                >
+                  <IconMinus className="size-3" />
+                </button>
+                <span className="w-6 text-center tabular-nums">{Math.round(activeEdit.fontSize)}</span>
+                <button
+                  type="button"
+                  onClick={() => updateActiveTextEdit({ fontSize: Math.min(200, activeEdit.fontSize + 1) })}
+                  className="rounded bg-white/10 p-1 hover:bg-white/20"
+                >
+                  <IconPlus className="size-3" />
+                </button>
+              </label>
+              <div className="flex items-center gap-1.5">
+                {COLOR_SWATCHES.map((swatch) => (
+                  <button
+                    key={swatch.label}
+                    type="button"
+                    onClick={() => updateActiveTextEdit({ color: swatch.value })}
+                    aria-label={swatch.label}
+                    title={swatch.label}
+                    className={`size-5 rounded-full ring-2 ring-offset-1 ring-offset-slate-800 ${
+                      activeEdit.color.r === swatch.value.r && activeEdit.color.g === swatch.value.g && activeEdit.color.b === swatch.value.b
+                        ? 'ring-white'
+                        : 'ring-transparent'
+                    }`}
+                    style={{ backgroundColor: `rgb(${swatch.value.r * 255}, ${swatch.value.g * 255}, ${swatch.value.b * 255})` }}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <label className="flex items-center gap-1.5 text-xs">
+              Size
               <button
-                key={swatch.label}
                 type="button"
-                onClick={() => updateActiveEdit({ color: swatch.value })}
-                aria-label={swatch.label}
-                title={swatch.label}
-                className={`size-5 rounded-full ring-2 ring-offset-1 ring-offset-slate-800 ${
-                  activeEdit.color.r === swatch.value.r && activeEdit.color.g === swatch.value.g && activeEdit.color.b === swatch.value.b
-                    ? 'ring-white'
-                    : 'ring-transparent'
-                }`}
-                style={{ backgroundColor: `rgb(${swatch.value.r * 255}, ${swatch.value.g * 255}, ${swatch.value.b * 255})` }}
-              />
-            ))}
-          </div>
+                onClick={() => {
+                  const width = Math.max(20, activeEdit.width * 0.9)
+                  updateActiveImageEdit({ width, height: width / activeEdit.aspectRatio })
+                }}
+                className="rounded bg-white/10 p-1 hover:bg-white/20"
+              >
+                <IconMinus className="size-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const width = Math.min(2000, activeEdit.width * 1.1)
+                  updateActiveImageEdit({ width, height: width / activeEdit.aspectRatio })
+                }}
+                className="rounded bg-white/10 p-1 hover:bg-white/20"
+              >
+                <IconPlus className="size-3" />
+              </button>
+            </label>
+          )}
+
           <button
             type="button"
             onClick={deleteActiveEdit}
             className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-red-500/20 px-2.5 py-1 text-xs font-medium text-red-200 hover:bg-red-500/30"
           >
             <IconTrash className="size-3.5" />
-            {activeEdit.kind === 'add' ? 'Delete' : 'Clear text'}
+            {activeEdit.kind === 'image' || activeEdit.mode === 'add' ? 'Delete' : 'Clear text'}
           </button>
           <button
             type="button"
@@ -318,8 +449,9 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
 
               {runs.map((run) => {
                 const edit = edits.get(run.id)
+                const textEdit = edit?.kind === 'text' ? edit : undefined
                 const isActive = activeId === run.id
-                const isEdited = !!edit && edit.text !== run.str
+                const isEdited = !!textEdit && textEdit.text !== run.str
                 return (
                   <div
                     key={run.id}
@@ -343,11 +475,11 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
                       height: run.screenRect.height * displayScale,
                     }}
                   >
-                    {isActive && edit && (
+                    {isActive && textEdit && (
                       <input
                         autoFocus
-                        value={edit.text}
-                        onChange={(e) => updateActiveEdit({ text: e.target.value })}
+                        value={textEdit.text}
+                        onChange={(e) => updateActiveTextEdit({ text: e.target.value })}
                         onFocus={(e) => e.currentTarget.select()}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === 'Escape') {
@@ -391,7 +523,7 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
                         autoFocus
                         rows={1}
                         value={edit.text}
-                        onChange={(e) => updateActiveEdit({ text: e.target.value })}
+                        onChange={(e) => updateActiveTextEdit({ text: e.target.value })}
                         onKeyDown={(e) => {
                           if (e.key === 'Escape') {
                             e.preventDefault()
@@ -411,6 +543,31 @@ export function TextEditModal({ page, sources, onClose, onApply, onError }: Text
                         {edit.text || ' '}
                       </span>
                     )}
+                  </div>
+                )
+              })}
+
+              {imageEdits.map((edit) => {
+                const isActive = activeId === edit.id
+                const topLeft = viewportTransform ? rawPointToScreen(viewportTransform, edit.x, edit.y + edit.height) : { x: 0, y: 0 }
+                return (
+                  <div
+                    key={edit.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setActiveId(edit.id)
+                    }}
+                    className={`absolute cursor-move border-2 ${isActive ? 'z-20 border-indigo-500' : 'border-dashed border-indigo-400'}`}
+                    style={{
+                      left: topLeft.x * displayScale,
+                      top: topLeft.y * displayScale,
+                      width: edit.width * pxPerPoint * displayScale,
+                      height: edit.height * pxPerPoint * displayScale,
+                    }}
+                  >
+                    <img src={edit.previewUrl} alt="" className="h-full w-full select-none object-fill" draggable={false} />
                   </div>
                 )
               })}

@@ -19,8 +19,9 @@ export interface TextColor {
 
 export interface TextEdit {
   id: string
+  kind: 'text'
   /** 'replace' covers the original run with white before drawing; 'add' draws straight onto the page. */
-  kind: 'replace' | 'add'
+  mode: 'replace' | 'add'
   /** Baseline-left origin, in the page's raw (unrotated) PDF point space -- matches pdf-lib's drawText convention. */
   x: number
   y: number
@@ -30,6 +31,24 @@ export interface TextEdit {
   /** Only set for 'replace' edits -- the area to whiteout before redrawing. */
   whiteoutRect?: TextRect
 }
+
+export interface ImageEdit {
+  id: string
+  kind: 'image'
+  /** Bottom-left origin and size, in the page's raw (unrotated) PDF point space. */
+  x: number
+  y: number
+  width: number
+  height: number
+  /** Natural aspect ratio (width / height) of the source image, for resize-preserving-shape. */
+  aspectRatio: number
+  format: 'png' | 'jpg'
+  bytes: ArrayBuffer
+  /** Only used by the editor for rendering the on-canvas preview. */
+  previewUrl: string
+}
+
+export type PageEdit = TextEdit | ImageEdit
 
 export interface DetectedTextRun {
   id: string
@@ -130,14 +149,15 @@ export async function detectTextRuns(page: PDFPageProxy, viewportTransform: numb
   return runs
 }
 
-/** Bakes a set of text edits into a fresh copy of the given page (preserving
- * its current rotation), producing a new standalone single-page PDF "source"
- * -- the same shape createBlankPage/loadImageFile produce, so the rest of the
- * app (thumbnails, print layout, split, merge...) needs no special-casing. */
-export async function applyTextEdits(
+/** Bakes a set of text/image edits into a fresh copy of the given page
+ * (preserving its current rotation), producing a new standalone single-page
+ * PDF "source" -- the same shape createBlankPage/loadImageFile produce, so
+ * the rest of the app (thumbnails, print layout, split, merge...) needs no
+ * special-casing. */
+export async function applyPageEdits(
   pageItem: PageItem,
   sources: Map<string, SourceDoc>,
-  edits: TextEdit[],
+  edits: PageEdit[],
 ): Promise<LoadedPdf> {
   const source = sources.get(pageItem.sourceId)
   if (!source) throw new Error('Missing source document')
@@ -153,7 +173,13 @@ export async function applyTextEdits(
 
   const font = await outDoc.embedFont(StandardFonts.Helvetica)
   for (const edit of edits) {
-    if (edit.kind === 'replace' && edit.whiteoutRect) {
+    if (edit.kind === 'image') {
+      const image = edit.format === 'png' ? await outDoc.embedPng(edit.bytes) : await outDoc.embedJpg(edit.bytes)
+      copiedPage.drawImage(image, { x: edit.x, y: edit.y, width: edit.width, height: edit.height })
+      continue
+    }
+
+    if (edit.mode === 'replace' && edit.whiteoutRect) {
       copiedPage.drawRectangle({
         x: edit.whiteoutRect.x,
         y: edit.whiteoutRect.y,

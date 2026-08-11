@@ -39,13 +39,15 @@ single byte ever leaving your device.
   Ctrl/Cmd+A select all, Escape to deselect, Delete/Backspace to remove the
   current selection
 
-### Edit text
+### Edit page
 - Click into any detected line of text on a page to edit it in place, or
   switch to "Add text" and click anywhere to insert something new
 - Adjustable font size and color; edits are baked into a fresh copy of the
   page (covered and redrawn, not securely removed from the underlying file)
+- "Add image" drops a PNG/JPG onto the page at the point you click, with a
+  +/- stepper to resize it (aspect ratio locked)
 - Gracefully detects pages with no text layer (e.g. scanned images) and
-  still lets you add new text on top
+  still lets you add new text or an image on top
 
 ### Crop
 - Trim any page's visible margins from the lightbox, with a live preview
